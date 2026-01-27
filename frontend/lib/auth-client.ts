@@ -7,8 +7,11 @@
 import { createAuthClient } from "better-auth/react";
 
 // Create auth client instance
-// Don't set baseURL - Better Auth will use current window.location.origin automatically
-export const authClient = createAuthClient();
+// Using empty string makes all auth API calls relative to current origin
+// This works correctly in both development (localhost:3000) and production (vercel.app)
+export const authClient = createAuthClient({
+  baseURL: "",
+});
 
 // Re-export commonly used methods
 export const {
