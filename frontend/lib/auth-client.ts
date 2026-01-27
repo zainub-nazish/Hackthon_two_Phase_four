@@ -7,11 +7,8 @@
 import { createAuthClient } from "better-auth/react";
 
 // Create auth client instance
-// Better Auth will automatically use the current origin for API calls
-export const authClient = createAuthClient({
-  // baseURL is optional - Better Auth uses current origin by default
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || undefined,
-});
+// Don't set baseURL - Better Auth will use current window.location.origin automatically
+export const authClient = createAuthClient();
 
 // Re-export commonly used methods
 export const {
