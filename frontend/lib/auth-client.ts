@@ -7,11 +7,13 @@
 import { createAuthClient } from "better-auth/react";
 
 // Create auth client instance
-// NEXT_PUBLIC_APP_URL must be set in environment:
-//   Local: .env.local → http://localhost:3000
-//   Vercel: Environment Variables → https://frontend-delta-two-31.vercel.app
+// Uses NODE_ENV to detect production (Vercel) vs development (local)
+const AUTH_URL = process.env.NODE_ENV === "production"
+  ? "https://frontend-delta-two-31.vercel.app"
+  : "http://localhost:3000";
+
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || "https://frontend-delta-two-31.vercel.app",
+  baseURL: AUTH_URL,
 });
 
 // Re-export commonly used methods
