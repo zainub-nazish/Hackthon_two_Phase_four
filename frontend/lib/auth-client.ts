@@ -2,29 +2,54 @@
  * Better Auth client-side helper.
  *
  * Provides client-side authentication utilities for React components.
- * Build: 2026-01-29-v2
+ * Build: 2026-01-29-v4 - Lazy initialization with window.location.origin
  */
 
 import { createAuthClient } from "better-auth/react";
 
-// Create auth client instance
-// Uses NODE_ENV to detect production (Vercel) vs development (local)
-const AUTH_URL = process.env.NODE_ENV === "production"
-  ? "https://frontend-delta-two-31.vercel.app"
-  : "http://localhost:3000";
+// Lazy-initialized auth client - only created on first use
+let _authClient: ReturnType<typeof createAuthClient> | null = null;
 
-export const authClient = createAuthClient({
-  baseURL: AUTH_URL,
-});
+function getAuthClient() {
+  if (!_authClient) {
+    // Create client with current window origin (only runs in browser)
+    const baseURL = typeof window !== "undefined"
+      ? window.location.origin
+      : "https://frontend-delta-two-31.vercel.app";
 
-// Re-export commonly used methods
-export const {
-  signIn,
-  signUp,
-  signOut,
-  useSession,
-  getSession,
-} = authClient;
+    console.log("[Auth] Creating client with baseURL:", baseURL);
+    _authClient = createAuthClient({ baseURL });
+  }
+  return _authClient;
+}
+
+// Wrapper functions that lazily initialize the client
+export const signIn = {
+  email: async (data: { email: string; password: string }) => {
+    return getAuthClient().signIn.email(data);
+  },
+};
+
+export const signUp = {
+  email: async (data: { email: string; password: string; name: string }) => {
+    return getAuthClient().signUp.email(data);
+  },
+};
+
+export const signOut = async () => {
+  return getAuthClient().signOut();
+};
+
+export const useSession = () => {
+  return getAuthClient().useSession();
+};
+
+export const getSession = async () => {
+  return getAuthClient().getSession();
+};
+
+// Export the getter for direct access if needed
+export { getAuthClient as authClient };
 
 /**
  * Get the current session token for API requests.
