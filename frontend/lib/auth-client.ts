@@ -2,19 +2,26 @@
  * Better Auth client-side helper.
  *
  * Provides client-side authentication utilities for React components.
- * Build: 2026-01-29-v5 - Hardcoded production URL
+ * Build: 2026-01-31-v6 - Auto-detect URL
  */
 
 import { createAuthClient } from "better-auth/react";
 
-// HARDCODED: Production URL for Vercel deployment
-// This MUST match your Vercel deployment URL
-const PRODUCTION_URL = "https://frontend-delta-two-31.vercel.app";
+// Auto-detect the base URL
+// In browser: use current origin (works for both localhost and Vercel)
+// In server: use NEXT_PUBLIC_APP_URL or fallback to production URL
+function getBaseURL(): string {
+  if (typeof window !== "undefined") {
+    // Client-side: use current origin
+    return window.location.origin;
+  }
+  // Server-side: use env variable or production URL
+  return process.env.NEXT_PUBLIC_APP_URL || "https://frontend-delta-two-31.vercel.app";
+}
 
-// Create auth client with hardcoded production URL
-// For local dev, this will cause CORS errors but that's expected
+// Create auth client with auto-detected URL
 export const authClient = createAuthClient({
-  baseURL: PRODUCTION_URL,
+  baseURL: getBaseURL(),
 });
 
 // Re-export commonly used methods
