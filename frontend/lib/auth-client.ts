@@ -2,20 +2,14 @@
  * Better Auth client-side helper.
  *
  * Provides client-side authentication utilities for React components.
- * Build: 2026-02-02-v10 - Hardcoded production URL
+ * Uses relative URLs for API calls to work across all environments.
  */
 
 import { createAuthClient } from "better-auth/react";
 
-// Use NEXT_PUBLIC env var (available at build time) or hardcoded production URL
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://frontend-delta-two-31.vercel.app";
-
-console.log("[Auth Client] Using baseURL:", BASE_URL);
-
-// Create auth client with production URL
-export const authClient = createAuthClient({
-  baseURL: BASE_URL,
-});
+// Create auth client with relative URLs (no baseURL needed)
+// This ensures API calls like /api/auth/sign-up work on any domain
+export const authClient = createAuthClient();
 
 // Re-export commonly used methods
 export const {
