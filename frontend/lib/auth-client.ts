@@ -2,26 +2,47 @@
  * Better Auth client-side helper.
  *
  * Provides client-side authentication utilities for React components.
- * Build: 2026-02-02-v7 - Fixed URL detection for Vercel
+ * Build: 2026-02-02-v9 - Lazy initialization for correct URL
  */
 
 import { createAuthClient } from "better-auth/react";
 
-// Create auth client - baseURL will be automatically detected by Better Auth
-// When baseURL is not provided, Better Auth uses the current origin
-export const authClient = createAuthClient({
-  // Don't set baseURL - let Better Auth auto-detect from current origin
-  // This ensures it works correctly on both localhost and Vercel
-});
+// Lazy-initialized auth client
+let _authClient: ReturnType<typeof createAuthClient> | null = null;
 
-// Re-export commonly used methods
-export const {
-  signIn,
-  signUp,
-  signOut,
-  useSession,
-  getSession,
-} = authClient;
+function getAuthClient() {
+  if (!_authClient) {
+    // Get the correct base URL
+    const baseURL = typeof window !== "undefined"
+      ? window.location.origin
+      : "https://frontend-delta-two-31.vercel.app";
+
+    console.log("[Auth Client] Initializing with baseURL:", baseURL);
+
+    _authClient = createAuthClient({ baseURL });
+  }
+  return _authClient;
+}
+
+// Export auth client getter
+export const authClient = {
+  get signIn() { return getAuthClient().signIn; },
+  get signUp() { return getAuthClient().signUp; },
+  get signOut() { return getAuthClient().signOut; },
+  get useSession() { return getAuthClient().useSession; },
+  get getSession() { return getAuthClient().getSession; },
+};
+
+// Re-export commonly used methods as functions
+export const signIn = {
+  get email() { return getAuthClient().signIn.email; },
+};
+export const signUp = {
+  get email() { return getAuthClient().signUp.email; },
+};
+export const signOut = () => getAuthClient().signOut();
+export const useSession = () => getAuthClient().useSession();
+export const getSession = () => getAuthClient().getSession();
 
 /**
  * Get the current session token for API requests.
