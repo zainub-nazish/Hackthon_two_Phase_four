@@ -21,32 +21,37 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
+      console.log("Attempting login for:", email);
+
       const result = await signIn.email({
         email,
         password,
       });
 
+      console.log("Login result:", JSON.stringify(result, null, 2));
+
       if (result.error) {
-        setError(result.error.message || "Invalid email or password");
+        console.error("Login error from server:", result.error);
+        setError(result.error.message || result.error.code || "Invalid email or password");
         return;
       }
 
       // Redirect to dashboard on success
       router.push("/tasks");
     } catch (err) {
-      // Provide more specific error messages
+      // Log full error for debugging
+      console.error("Login error details:", err);
+      console.error("Error type:", typeof err);
+      console.error("Error JSON:", JSON.stringify(err, null, 2));
+
+      // Show actual error message for debugging
       if (err instanceof Error) {
-        if (err.message.includes("fetch") || err.message.includes("network")) {
-          setError("Unable to connect to the server. Please check your internet connection.");
-        } else if (err.message.includes("CORS") || err.message.includes("origin")) {
-          setError("Server configuration error. Please contact support.");
-        } else {
-          setError(err.message || "An unexpected error occurred. Please try again.");
-        }
+        setError(`Error: ${err.message}`);
+      } else if (typeof err === 'object' && err !== null) {
+        setError(`Error: ${JSON.stringify(err)}`);
       } else {
-        setError("An unexpected error occurred. Please try again.");
+        setError(`Error: ${String(err)}`);
       }
-      console.error("Login error:", err);
     } finally {
       setIsLoading(false);
     }
