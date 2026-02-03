@@ -21,14 +21,28 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      console.log("Attempting login for:", email);
+      console.log("[Login] Starting login for:", email);
+      console.log("[Login] Current origin:", typeof window !== "undefined" ? window.location.origin : "SSR");
 
-      const result = await signIn.email({
-        email,
-        password,
-      });
+      const result = await signIn.email(
+        {
+          email,
+          password,
+        },
+        {
+          onRequest: () => {
+            console.log("[Login] Request starting...");
+          },
+          onSuccess: () => {
+            console.log("[Login] Request succeeded!");
+          },
+          onError: (ctx) => {
+            console.error("[Login] Request error:", ctx.error);
+          },
+        }
+      );
 
-      console.log("Login result:", JSON.stringify(result, null, 2));
+      console.log("[Login] Result:", JSON.stringify(result, null, 2));
 
       if (result.error) {
         console.error("Login error from server:", result.error);
