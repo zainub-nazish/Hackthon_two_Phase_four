@@ -27,9 +27,15 @@ if (!process.env.BETTER_AUTH_SECRET) {
 const sql = neon(process.env.DATABASE_URL || "");
 const db = drizzle(sql, { schema });
 
+// Determine if running in production (Vercel)
+const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+
 export const auth = betterAuth({
   // Use environment variable for shared secret
   secret: process.env.BETTER_AUTH_SECRET,
+
+  // Base URL for auth endpoints (required for Vercel)
+  baseURL: process.env.NEXT_PUBLIC_APP_URL || "https://frontend-delta-two-31.vercel.app",
 
   // Database configuration - Neon PostgreSQL
   database: drizzleAdapter(db, {
@@ -41,13 +47,26 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // Update session after 1 day
+    cookieCache: {
+      enabled: true,
+      maxAge: 60 * 5, // 5 minutes cache
+    },
+  },
+
+  // Advanced cookie configuration for Vercel/HTTPS
+  advanced: {
+    cookiePrefix: "better-auth",
+    useSecureCookies: isProduction, // Secure cookies on HTTPS
+    crossSubDomainCookies: {
+      enabled: false, // Disable unless using subdomains
+    },
   },
 
   // Trusted origins for CORS
   trustedOrigins: [
     "http://localhost:3000",
     process.env.NEXT_PUBLIC_APP_URL,
-    // VERCEL_URL is automatically set by Vercel
+    // VERCEL_URL is automatically set by Vercel (includes preview URLs)
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
     "https://frontend-delta-two-31.vercel.app",
   ].filter((origin): origin is string => Boolean(origin)),
