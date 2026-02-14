@@ -1,11 +1,14 @@
 """Chat API routes with conversation persistence and AI agent invocation."""
 
 import json
+import logging
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Path
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -122,7 +125,10 @@ async def send_message(
     # Call AI agent
     try:
         agent_response = await agent.generate_response(messages_for_agent, user_id)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[CHAT ERROR] AI agent error: {e}")
+        traceback.print_exc()
         # User message already persisted - update conversation timestamp and return error
         conversation.updated_at = datetime.utcnow()
         session.add(conversation)

@@ -257,3 +257,11 @@ async def update_task(
             "description": task.description,
             "completed": task.completed,
         }
+
+
+# =============================================================================
+# Stdio Entry Point (for MCPServerStdio in OpenAI Agents SDK)
+# =============================================================================
+
+if __name__ == "__main__":
+    server.run(transport="stdio")

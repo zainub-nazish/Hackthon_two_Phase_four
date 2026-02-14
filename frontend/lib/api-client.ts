@@ -52,7 +52,9 @@ export async function apiClient<T>(
 
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${endpoint}`, {
+    const url = `${API_URL}${endpoint}`;
+    console.log(`[API] ${options.method || "GET"} ${url}`, token ? "(token attached)" : "(no token)");
+    response = await fetch(url, {
       ...options,
       headers,
       credentials: "include", // Include cookies for CORS
