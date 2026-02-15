@@ -7,7 +7,7 @@
 
 import { getAuthToken } from "./auth-client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "https://zainubnazish-phase-three-huggies.hf.space";
 
 /**
  * API client error with status code.
