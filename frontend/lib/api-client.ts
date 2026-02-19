@@ -7,9 +7,9 @@
 
 import { getAuthToken } from "./auth-client";
 
-// Use relative URL — Next.js (dev) and Vercel (prod) rewrites route /api/v1/* to the backend.
-// See next.config.mjs and vercel.json for the rewrite rules.
-const API_URL = "";
+// NEXT_PUBLIC_API_URL is locked to phase-three in vercel.json env (overrides Vercel project settings).
+// Falls back to relative URL so Next.js/Vercel rewrites handle routing.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
  * API client error with status code.

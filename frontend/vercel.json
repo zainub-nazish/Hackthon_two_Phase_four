@@ -4,6 +4,9 @@
   "outputDirectory": ".next",
   "framework": "nextjs",
   "installCommand": "npm install",
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://zainubnazish-phase-three-huggies.hf.space"
+  },
   "rewrites": [
     {
       "source": "/api/v1/:path*",
