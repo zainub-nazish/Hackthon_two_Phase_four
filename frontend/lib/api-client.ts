@@ -7,7 +7,9 @@
 
 import { getAuthToken } from "./auth-client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use relative URL — Next.js (dev) and Vercel (prod) rewrites route /api/v1/* to the backend.
+// See next.config.mjs and vercel.json for the rewrite rules.
+const API_URL = "";
 
 /**
  * API client error with status code.
