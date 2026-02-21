@@ -62,7 +62,7 @@ class TestMCPAddTask:
         result = await add_task(title="x" * 256, user_id=str(uuid4()))
 
         assert result["is_error"] is True
-        assert "255" in result["error"]
+        assert "200" in result["error"]
 
 
 # =============================================================================
