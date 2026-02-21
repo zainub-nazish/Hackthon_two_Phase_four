@@ -184,8 +184,8 @@ class TestDeleteTask:
 
         result = await delete_task(task_id=task["id"], user_id=user_id)
 
-        assert result["deleted"] is True
-        assert result["title"] == "To delete"
+        assert result["success"] is True
+        assert result["deleted_task_id"] == task["id"]
 
         list_result = await list_tasks(user_id=user_id)
         assert list_result["count"] == 0
