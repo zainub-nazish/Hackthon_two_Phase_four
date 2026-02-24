@@ -66,8 +66,24 @@ coverage/
 # Logs
 *.log
 logs/
+# Exception: Phase IV deployment audit trail is a required artifact
+!phase-iv-audit.log
 
 # Temporary files
 *.tmp
 *.temp
 .cache/
+tmpclaude-*
+frontend/tmpclaude-*
+
+# SQLite runtime databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/agent-memory/
+
+# Misc artifacts
+=0.79.0

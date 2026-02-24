@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Standalone output for Docker/Kubernetes deployment (Phase IV)
+  output: 'standalone',
+
   // Strict mode for highlighting potential problems
   reactStrictMode: true,
 

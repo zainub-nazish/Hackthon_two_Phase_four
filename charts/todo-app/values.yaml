@@ -1,0 +1,48 @@
+backend:
+  image: todo-backend
+  tag: latest
+  replicas: 2
+  port: 8000
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  livenessProbe:
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 15
+
+frontend:
+  image: todo-frontend
+  tag: latest
+  replicas: 2
+  port: 3000
+  nodePort: 30080
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 20
+    periodSeconds: 30
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 15
+    periodSeconds: 15
+
+secrets:
+  backendSecretName: todo-backend-secret
+
+configmap:
+  frontendConfigName: todo-frontend-config

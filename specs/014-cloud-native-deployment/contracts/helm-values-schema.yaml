@@ -1,0 +1,197 @@
+---
+# Helm Values Schema — todo-app Chart
+# Defines the contract for all configurable parameters in charts/todo-app/values.yaml
+# Used by: helm install / helm upgrade
+# Validated by: helm lint
+
+$schema: "https://json-schema.org/draft/07/schema#"
+
+title: todo-app Helm Chart Values
+description: |
+  Configurable parameters for the todo-app Helm chart.
+  Deploys todo-backend (FastAPI) and todo-frontend (Next.js) to a Kubernetes cluster.
+
+type: object
+required:
+  - backend
+  - frontend
+  - secrets
+  - configmap
+
+properties:
+
+  backend:
+    type: object
+    description: FastAPI backend deployment configuration
+    required: [image, tag, replicas, port]
+    properties:
+      image:
+        type: string
+        description: Docker image name (without tag)
+        default: "todo-backend"
+        example: "todo-backend"
+      tag:
+        type: string
+        description: Docker image tag
+        default: "latest"
+        example: "latest"
+      replicas:
+        type: integer
+        minimum: 1
+        maximum: 10
+        default: 2
+        description: Number of backend pod replicas
+      port:
+        type: integer
+        default: 8000
+        description: Container port (must match uvicorn --port)
+      resources:
+        type: object
+        description: CPU and memory requests/limits
+        properties:
+          requests:
+            type: object
+            properties:
+              cpu:
+                type: string
+                default: "100m"
+              memory:
+                type: string
+                default: "128Mi"
+          limits:
+            type: object
+            properties:
+              cpu:
+                type: string
+                default: "500m"
+              memory:
+                type: string
+                default: "512Mi"
+      livenessProbe:
+        type: object
+        description: Liveness probe configuration
+        properties:
+          path:
+            type: string
+            default: "/health"
+          initialDelaySeconds:
+            type: integer
+            default: 15
+          periodSeconds:
+            type: integer
+            default: 30
+      readinessProbe:
+        type: object
+        properties:
+          path:
+            type: string
+            default: "/health"
+          initialDelaySeconds:
+            type: integer
+            default: 10
+          periodSeconds:
+            type: integer
+            default: 15
+
+  frontend:
+    type: object
+    description: Next.js frontend deployment configuration
+    required: [image, tag, replicas, port, nodePort]
+    properties:
+      image:
+        type: string
+        default: "todo-frontend"
+      tag:
+        type: string
+        default: "latest"
+      replicas:
+        type: integer
+        minimum: 1
+        maximum: 10
+        default: 2
+      port:
+        type: integer
+        default: 3000
+        description: Container port (Next.js server)
+      nodePort:
+        type: integer
+        minimum: 30000
+        maximum: 32767
+        default: 30080
+        description: External NodePort for browser access via minikube service
+      resources:
+        type: object
+        properties:
+          requests:
+            type: object
+            properties:
+              cpu:
+                type: string
+                default: "50m"
+              memory:
+                type: string
+                default: "64Mi"
+          limits:
+            type: object
+            properties:
+              cpu:
+                type: string
+                default: "200m"
+              memory:
+                type: string
+                default: "256Mi"
+      livenessProbe:
+        type: object
+        properties:
+          path:
+            type: string
+            default: "/"
+          initialDelaySeconds:
+            type: integer
+            default: 20
+          periodSeconds:
+            type: integer
+            default: 30
+      readinessProbe:
+        type: object
+        properties:
+          path:
+            type: string
+            default: "/"
+          initialDelaySeconds:
+            type: integer
+            default: 15
+          periodSeconds:
+            type: integer
+            default: 15
+
+  secrets:
+    type: object
+    description: References to pre-created Kubernetes Secrets
+    required: [backendSecretName]
+    properties:
+      backendSecretName:
+        type: string
+        default: "todo-backend-secret"
+        description: |
+          Name of the pre-created K8s Secret containing:
+          DATABASE_URL, OPENAI_API_KEY, BETTER_AUTH_SECRET.
+          Create imperatively: kubectl create secret generic todo-backend-secret ...
+
+  configmap:
+    type: object
+    description: References to pre-created ConfigMaps
+    required: [frontendConfigName]
+    properties:
+      frontendConfigName:
+        type: string
+        default: "todo-frontend-config"
+        description: |
+          Name of the ConfigMap containing NEXT_PUBLIC_API_URL.
+          Injected into frontend pods at runtime.
+
+# Deployment constraints enforced at install time:
+# - imagePullPolicy MUST be Never (Minikube local registry)
+# - backend Service type MUST be ClusterIP
+# - frontend Service type MUST be NodePort
+# - All resource limits MUST be set (Kagent will flag unlimited containers)
