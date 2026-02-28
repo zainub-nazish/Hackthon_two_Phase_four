@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: todo-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_db:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/todo.db
+      - DEBUG=true
+      - BETTER_AUTH_URL=http://todo-frontend:3000
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: todo-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env.local
+    environment:
+      # Is line ko lazmi change karein
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  backend_db:

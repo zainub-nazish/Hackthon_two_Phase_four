@@ -7,7 +7,9 @@
 
 import { getAuthToken } from "./auth-client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://zainubnazish-phase-three-huggies.hf.space";
+// NEXT_PUBLIC_API_URL is locked to phase-three in vercel.json env (overrides Vercel project settings).
+// Falls back to relative URL so Next.js/Vercel rewrites handle routing.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
  * API client error with status code.

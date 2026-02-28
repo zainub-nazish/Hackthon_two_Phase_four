@@ -62,7 +62,7 @@ class TestMCPAddTask:
         result = await add_task(title="x" * 256, user_id=str(uuid4()))
 
         assert result["is_error"] is True
-        assert "255" in result["error"]
+        assert "200" in result["error"]
 
 
 # =============================================================================
@@ -263,8 +263,8 @@ class TestMCPDeleteTask:
 
         result = await delete_task(task_id=task["id"], user_id=user_id)
 
-        assert result["deleted"] is True
-        assert result["title"] == "To delete"
+        assert result["success"] is True
+        assert result["deleted_task_id"] == task["id"]
 
         # Verify it's actually gone
         list_result = await list_tasks(user_id=user_id)

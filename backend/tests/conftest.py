@@ -222,6 +222,7 @@ def _setup_test_app():
     import importlib
     import backend.config
     import backend.database
+    import backend.auth.dependencies
     import backend.services.mcp_tools
     import backend.services.ai_agent
     import backend.routes.tasks
@@ -230,6 +231,7 @@ def _setup_test_app():
 
     importlib.reload(backend.config)
     importlib.reload(backend.database)
+    importlib.reload(backend.auth.dependencies)
     importlib.reload(backend.services.mcp_tools)
     importlib.reload(backend.services.ai_agent)
     importlib.reload(backend.routes.tasks)

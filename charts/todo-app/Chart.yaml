@@ -1,0 +1,12 @@
+apiVersion: v2
+name: todo-app
+description: Phase IV Todo Chatbot on Minikube — FastAPI backend + Next.js frontend
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - todo
+  - chatbot
+  - fastapi
+  - nextjs
+  - minikube

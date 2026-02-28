@@ -5,6 +5,7 @@
  */
 
 import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
@@ -75,6 +76,9 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+
+  // Bearer plugin: allows session token in Authorization: Bearer header
+  plugins: [bearer()],
 });
 
 export type Auth = typeof auth;

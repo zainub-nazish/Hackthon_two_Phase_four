@@ -108,7 +108,7 @@ class ChatRequest(BaseModel):
     message: str = Field(
         ...,
         min_length=1,
-        max_length=1000,
+        max_length=2000,
         description="User's natural language message"
     )
 
