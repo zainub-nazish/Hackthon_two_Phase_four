@@ -20,6 +20,8 @@ COPY backend/ ./backend/
 
 RUN adduser --disabled-password --gecos '' --uid 1000 appuser
 
+RUN mkdir -p /app/data && chown 1000:1000 /app/data
+
 USER appuser
 
 EXPOSE 8000

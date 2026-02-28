@@ -1,67 +1,62 @@
 """Authentication dependencies for FastAPI routes."""
 
+import httpx
 from fastapi import Depends, HTTPException, status, Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt as jose_jwt, ExpiredSignatureError, JWTError
 
 from backend.config import settings
 from backend.models.schemas import CurrentUser
 
 # HTTPBearer security scheme - extracts Bearer token from Authorization header
 security = HTTPBearer(
-    description="JWT token from Better Auth",
-    auto_error=True  # Automatically return 401 if no token
+    description="Better Auth session token",
+    auto_error=True
 )
-
-_ALGORITHM = "HS256"
-_CLOCK_SKEW_LEEWAY = 10  # seconds
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> CurrentUser:
     """
-    Verify JWT token using BETTER_AUTH_SECRET.
+    Verify session token via Better Auth's /api/auth/get-session endpoint.
 
-    This dependency:
-    1. Extracts token from Authorization: Bearer <token> header
-    2. Decodes and verifies the JWT signature with settings.jwt_secret
-    3. Validates standard claims (exp, sub) with 10-second clock skew leeway
-    4. Returns user info from token claims
+    Better Auth bearer plugin converts Authorization: Bearer <token>
+    to a session lookup and returns user data.
 
     Raises:
         HTTPException: 401 Unauthorized for any verification failure
     """
     token = credentials.credentials
+    import logging
+    log = logging.getLogger("auth")
+    log.warning(f"[AUTH] token received: {token[:10]}... len={len(token)}")
 
     try:
-        payload = jose_jwt.decode(
-            token,
-            settings.jwt_secret,
-            algorithms=[_ALGORITHM],
-            options={"leeway": _CLOCK_SKEW_LEEWAY},
-        )
-    except ExpiredSignatureError:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.better_auth_url}/api/auth/get-session",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        log.warning(f"[AUTH] get-session status={response.status_code} body={response.text[:200]}")
+    except httpx.RequestError as e:
+        log.warning(f"[AUTH] get-session request error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
+            detail="Auth service unreachable",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except Exception:
+
+    if response.status_code != 200:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_id = payload.get("sub")
-    if not user_id:
+    data = response.json()
+    user = data.get("user") if data else None
+
+    if not user or not user.get("id"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -69,8 +64,8 @@ async def get_current_user(
         )
 
     return CurrentUser(
-        user_id=user_id,
-        email=payload.get("email", ""),
+        user_id=user["id"],
+        email=user.get("email", ""),
     )
 
 
@@ -81,7 +76,6 @@ async def verify_user_owns_resource(
     """
     Verify that the authenticated user matches the user_id in the URL path.
 
-    This prevents users from accessing other users' resources (IDOR prevention).
     Returns 404 (not 403) to prevent information leakage about resource existence.
     """
     if current_user.user_id != user_id:
