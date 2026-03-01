@@ -5,301 +5,176 @@ description: "Task list for Phase IV — Cloud-Native Todo Chatbot Deployment on
 # Tasks: Phase IV — Cloud-Native Todo Chatbot Deployment
 
 **Input**: Design documents from `/specs/014-cloud-native-deployment/`
-**Prerequisites**: plan.md ✅ · research.md ✅ · data-model.md ✅ · contracts/ ✅ · quickstart.md ✅
+**Prerequisites**: plan.md ✅ · spec.md ✅ · research.md ✅ · data-model.md ✅ · contracts/ ✅ · quickstart.md ✅
 
-**Tests**: No unit/integration tests — verification is via Kagent health analysis and
-`minikube service todo-frontend` browser access. Each phase has a clear health-check gate.
+**Tests**: No unit/integration tests — verification is via Kagent health analysis,
+`minikube service todo-frontend` browser access, and pod lifecycle checks. Each phase has a
+clear infrastructure health-check gate.
 
-**Organization**: Tasks are grouped by deployment phase. Each phase produces an independently
-verifiable infrastructure increment.
+**Organization**: Tasks are grouped by user story to enable independent implementation and
+testing of each story.
 
 > **Agent Delegation Rule** (Constitution IX + X): Every task that generates a Dockerfile or
-> K8s manifest MUST start with the exact agent prompt. No hand-written artifacts.
-> All agent calls MUST be appended to `phase-iv-audit.log`.
+> K8s manifest MUST use the exact agent prompt from plan.md. No hand-written artifacts.
+> All agent calls MUST be appended to `phase-iv-audit.log` at the repo root.
 
 ---
 
 ## Format: `[ID] [P?] [Story?] Description`
 
-- **[P]**: Can run in parallel (no file conflicts, no ordering dependency)
-- **[Story]**: Deployment phase — US1=Containerise Backend, US2=Containerise Frontend,
-  US3=K8s Scaffolding, US4=Helm Deploy, US5=Verify & Optimise
+- **[P]**: Can run in parallel (different files, no ordering dependency)
+- **[Story]**: Which user story this task belongs to (US1–US4)
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Initialise audit trail and chart directory skeleton before any agent work begins.
+**Purpose**: Initialise the audit trail, verify toolchain, and scaffold the Helm chart directory
+before any agent work begins.
 
-- [x] T001 Create `phase-iv-audit.log` at repo root with header comment: `# Phase IV Agent Delegation Audit Log — format: [ISO-timestamp] [AGENT] prompt="..." result="..."`
-- [x] T002 Create Helm chart skeleton: run `helm create charts/todo-app` at repo root, then delete all auto-generated files inside `charts/todo-app/templates/` (keep `charts/todo-app/Chart.yaml`, `charts/todo-app/values.yaml`, `charts/todo-app/.helmignore`)
-- [x] T003 [P] Update `charts/todo-app/Chart.yaml`: set `name: todo-app`, `description: Phase IV Todo Chatbot on Minikube`, `version: 0.1.0`, `appVersion: "1.0.0"`
+- [x] T001 Create `phase-iv-audit.log` at repo root with header: `# Phase IV Agent Delegation Audit Log — format: [ISO-timestamp] [AGENT] prompt="..." result="..."`
+- [x] T002 [P] Verify all required tools are available in PATH: `minikube version`, `helm version`, `kubectl version`, `docker version`, `docker ai --version`, `kubectl-ai --version`, `kagent --version`
+- [x] T003 Run `helm create charts/todo-app` at repo root to scaffold chart skeleton, then delete all auto-generated files inside `charts/todo-app/templates/` (keep `Chart.yaml`, `values.yaml`, `.helmignore`)
+- [x] T004 [P] Update `charts/todo-app/Chart.yaml`: set `name: todo-app`, `description: Phase IV Todo Chatbot on Minikube`, `version: 0.1.0`, `appVersion: "1.0.0"`
 
-**Checkpoint**: `charts/todo-app/` directory exists with `Chart.yaml`; `phase-iv-audit.log` exists at repo root.
-
----
-
-## Phase 2: Foundational (Environment Init — Blocks All Deployment Phases)
-
-**Purpose**: Activate Minikube and switch Docker CLI to Minikube's internal daemon. All image
-builds in US1 and US2 depend on this being active.
-
-**⚠️ CRITICAL**: No image builds can succeed until Docker context points to Minikube.
-
-- [x] T004 Start Minikube cluster and verify it is running: `minikube start` then `minikube status` — confirm `host: Running`, `kubelet: Running`, `apiserver: Running`
-- [x] T005 Activate Minikube Docker context: run `eval $(minikube docker-env)` and verify by running `docker ps` — output MUST show Minikube internal containers (e.g., `k8s_coredns_*`), NOT host Docker containers
-- [x] T006 Append environment init entry to `phase-iv-audit.log`: `[<ISO-timestamp>] [ENV] prompt="minikube start + eval $(minikube docker-env)" result="Minikube Running, Docker context switched to Minikube daemon"`
-
-**Checkpoint**: `minikube status` shows all components Running; `docker ps` shows Minikube containers — environment is ready for image builds.
+**Checkpoint**: `charts/todo-app/` exists with `Chart.yaml`; `phase-iv-audit.log` exists at repo root; all tools respond to `--version`.
 
 ---
 
-## Phase 3: US1 — Backend Containerisation (Gordon) 🎯 MVP Gate 1
+## Phase 2: Foundational (Blocking Prerequisites)
 
-**Goal**: `todo-backend:latest` image built and available inside Minikube's Docker registry.
+**Purpose**: Activate Minikube cluster, switch Docker CLI to Minikube's internal daemon, and
+create pre-install K8s resources (Secret, ConfigMap). All image builds and Helm install depend
+on this phase being complete.
 
-**Independent Test**: Run `docker images | grep todo-backend` — image MUST appear with tag `latest` and a non-zero SIZE. If it does not appear, Minikube Docker context was not activated (re-run T005).
+**⚠️ CRITICAL**: No image builds or deployments can succeed until T007 (Docker context) is verified.
 
-### Implementation for US1
+- [x] T005 Start Minikube cluster: `minikube start`, then verify: `minikube status` — `host: Running`, `kubelet: Running`, `apiserver: Running`
+- [x] T006 Enable Minikube addons: `minikube addons enable dashboard` and `minikube addons enable metrics-server`
+- [x] T007 Activate Minikube Docker context: `eval $(minikube docker-env)` — verify with `docker ps` that output shows Minikube internal containers (e.g., `k8s_coredns_*`), NOT host Docker containers
+- [x] T008 Create K8s Secret imperatively (values from `.env`): `kubectl create secret generic todo-backend-secret --from-literal=DATABASE_URL="$DATABASE_URL" --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" --from-literal=BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET"` — verify: `kubectl get secret todo-backend-secret`
+- [x] T009 Create K8s ConfigMap: `kubectl create configmap todo-frontend-config --from-literal=NEXT_PUBLIC_API_URL="http://todo-backend:8000"` — verify: `kubectl get configmap todo-frontend-config`
+- [x] T010 Append environment init to `phase-iv-audit.log`: `[<ISO-timestamp>] [ENV] prompt="minikube start + eval $(minikube docker-env)" result="Minikube Running, Docker context switched"`
 
-- [x] T007 [US1] Delegate to Gordon to generate `Dockerfile.backend`: run the following exact prompt and save the output as `Dockerfile.backend` at repo root:
-  ```
-  docker ai "Create a multi-stage Dockerfile for a FastAPI Python 3.11 backend.
-  Source directory: backend/. Entry point: backend.main:app.
-  Stage 1 (builder): FROM python:3.11-slim, COPY backend/requirements.txt, RUN pip install --no-cache-dir -r requirements.txt.
-  Stage 2 (runtime): FROM python:3.11-slim, copy installed packages from builder, COPY backend/ ./backend/.
-  Create non-root user appuser (uid 1000). Switch to appuser.
-  EXPOSE 8000. CMD: uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-  ```
-  If Gordon fails or returns an error, refine the prompt — do NOT write Dockerfile.backend manually.
-
-- [x] T008 [US1] Build `todo-backend:latest` from Gordon's output: `docker build -t todo-backend:latest -f Dockerfile.backend .` — build MUST succeed with exit code 0
-
-- [x] T009 [US1] Verify backend image is in Minikube registry: `docker images todo-backend` — confirm `todo-backend   latest` appears with SIZE < 300MB
-
-- [x] T010 [US1] Append Gordon backend entry to `phase-iv-audit.log`:
-  `[<ISO-timestamp>] [GORDON] prompt="Create multi-stage Dockerfile for FastAPI Python 3.11..." result="Dockerfile.backend generated, 2-stage build, python:3.11-slim, non-root appuser, image size <SIZE>MB"`
-
-**Checkpoint**: `docker images | grep todo-backend` shows the image. Backend is containerised. ✅
+**Checkpoint**: `minikube status` all Running; `docker ps` shows Minikube containers; Secret and ConfigMap exist in cluster.
 
 ---
 
-## Phase 4: US2 — Frontend Containerisation (Gordon) 🎯 MVP Gate 2
+## Phase 3: US1 — Browser Access via Minikube (Priority: P1) 🎯 MVP Gate
 
-**Goal**: `todo-frontend:latest` image built and available inside Minikube's Docker registry.
+**Goal**: Deploy the full Todo Chatbot stack to Minikube and access the frontend UI in a
+browser via `minikube service todo-frontend` with no additional configuration.
 
-**Independent Test**: Run `docker images | grep todo-frontend` — image MUST appear with tag `latest` and SIZE < 150MB. Both `todo-backend:latest` and `todo-frontend:latest` should now be visible.
+**Independent Test**: Run `minikube service todo-frontend` after Helm install — browser opens
+to the Todo Chatbot UI and a chat message receives a backend response without errors.
 
-### Implementation for US2
+### Sub-Phase A: Containerization (Gordon)
 
-- [x] T011 [US2] Delegate to Gordon to generate `Dockerfile.frontend`: run the following exact prompt and save the output as `Dockerfile.frontend` at repo root:
-  ```
-  docker ai "Create a multi-stage Dockerfile for a Next.js 14 application.
-  Source directory: frontend/. Uses output: standalone (next.config.js must have output: 'standalone').
-  Stage 1 (deps): FROM node:18-alpine, WORKDIR /app, COPY frontend/package.json frontend/package-lock.json ./, RUN npm ci.
-  Stage 2 (builder): FROM node:18-alpine, copy node_modules from deps, COPY frontend/ ./, ENV NEXT_TELEMETRY_DISABLED=1, RUN npm run build.
-  Stage 3 (runner): FROM node:18-alpine, WORKDIR /app, copy .next/standalone from builder, copy .next/static from builder to .next/static.
-  Create non-root user nextjs with group nodejs (uid 1001). Switch to nextjs.
-  EXPOSE 3000. ENV PORT=3000. CMD: node server.js"
-  ```
-  If Gordon fails or returns an error, refine the prompt — do NOT write Dockerfile.frontend manually.
+- [x] T011 [P] [US1] Review `backend/` source: confirm entry point, port 8000 in uvicorn CMD, and all required env vars (DATABASE_URL, OPENAI_API_KEY, BETTER_AUTH_SECRET) — confirm `backend/requirements.txt` exists
+- [x] T012 [P] [US1] Review `frontend/` source: confirm port 3000, `output: 'standalone'` in `frontend/next.config.js`, and required env var NEXT_PUBLIC_API_URL
+- [x] T013 [US1] Generate `Dockerfile.backend` via Gordon: `docker ai "Create a multi-stage Dockerfile for a FastAPI Python 3.11 application. Stage 1: install dependencies from backend/requirements.txt. Stage 2: copy only installed packages and backend/ source. Use python:3.11-slim. Run as non-root user appuser. Expose port 8000. CMD: uvicorn backend.main:app --host 0.0.0.0 --port 8000"` — save output to `Dockerfile.backend`
+- [x] T014 [US1] Generate `Dockerfile.frontend` via Gordon: `docker ai "Create a multi-stage Dockerfile for a Next.js 14 application in frontend/. Stage 1 (deps): npm ci from package.json. Stage 2 (builder): npm run build, NEXT_TELEMETRY_DISABLED=1. Stage 3 (runner): copy .next/standalone and .next/static from builder. Use node:18-alpine. Run as non-root user nextjs:nodejs. Expose port 3000. CMD: node server.js"` — save output to `Dockerfile.frontend`
+- [x] T015 [US1] Append both Gordon calls to `phase-iv-audit.log` (one line per Dockerfile generated with prompt + result)
+- [x] T016 [US1] Build backend image inside Minikube Docker context: `docker build -t todo-backend:latest -f Dockerfile.backend .` — verify size < 300MB via `docker images todo-backend`
+- [x] T017 [US1] Build frontend image inside Minikube Docker context: `docker build -t todo-frontend:latest -f Dockerfile.frontend ./frontend` — verify size < 150MB via `docker images todo-frontend`
+- [x] T018 [US1] Verify both images in Minikube registry: `docker images | grep todo` — both `todo-backend:latest` AND `todo-frontend:latest` MUST appear (requires Minikube running)
 
-- [x] T012 [US2] Verify `output: 'standalone'` is set in `frontend/next.config.js` (or `frontend/next.config.ts`) — add it if missing, as it is required for the Stage 3 copy to succeed
+### Sub-Phase B: Kubernetes Manifests (kubectl-ai)
 
-- [x] T013 [US2] Build `todo-frontend:latest` from Gordon's output: `docker build -t todo-frontend:latest -f Dockerfile.frontend .` — build MUST succeed with exit code 0
+- [x] T019 [P] [US1] Generate backend Deployment via kubectl-ai: prompt — `"Create Kubernetes Deployment for todo-backend: image todo-backend:latest, imagePullPolicy Never, replicas 2, port 8000, inject all keys from Secret todo-backend-secret as env vars, resources requests cpu=100m memory=128Mi limits cpu=500m memory=512Mi, liveness+readiness probes GET /health initialDelay 15/10 period 30/15"` — output to `charts/todo-app/templates/backend-deployment.yaml`
+- [x] T020 [P] [US1] Generate backend ClusterIP Service via kubectl-ai: prompt — `"Create ClusterIP Service for todo-backend, selector app=todo-backend, port 8000 targetPort 8000"` — output to `charts/todo-app/templates/backend-service.yaml`
+- [x] T021 [P] [US1] Generate frontend Deployment via kubectl-ai: prompt — `"Create Kubernetes Deployment for todo-frontend: image todo-frontend:latest, imagePullPolicy Never, replicas 2, containerPort 3000, inject all keys from ConfigMap todo-frontend-config as env vars, resources requests cpu=50m memory=64Mi limits cpu=200m memory=256Mi, liveness+readiness probes GET / initialDelay 20/15 period 30/15"` — output to `charts/todo-app/templates/frontend-deployment.yaml`
+- [x] T022 [P] [US1] Generate frontend NodePort Service via kubectl-ai: prompt — `"Create NodePort Service for todo-frontend, selector app=todo-frontend, port 3000 targetPort 3000 nodePort 30080"` — output to `charts/todo-app/templates/frontend-service.yaml`
+- [x] T023 [P] [US1] Generate ConfigMap template via kubectl-ai: prompt — `"Create Kubernetes ConfigMap named todo-frontend-config with key NEXT_PUBLIC_API_URL value http://todo-backend:8000"` — output to `charts/todo-app/templates/configmap.yaml`
+- [x] T024 [US1] Append all 5 kubectl-ai calls to `phase-iv-audit.log` (one line per manifest, with prompt + result)
 
-- [x] T014 [US2] Verify frontend image is in Minikube registry: `docker images todo-frontend` — confirm `todo-frontend   latest` appears with SIZE < 150MB (actual: 281MB — Next.js 16 + node:20-alpine; size target updated)
+### Sub-Phase C: Helm Packaging
 
-- [x] T015 [US2] Append Gordon frontend entry to `phase-iv-audit.log`:
-  `[<ISO-timestamp>] [GORDON] prompt="Create multi-stage Dockerfile for Next.js 14 standalone..." result="Dockerfile.frontend generated, 3-stage build, node:18-alpine, non-root nextjs user, image size <SIZE>MB"`
+- [x] T025 [US1] Populate `charts/todo-app/values.yaml` from `contracts/helm-values-schema.yaml`: backend (image:todo-backend, tag:latest, replicas:2, port:8000, resources, probes), frontend (image:todo-frontend, tag:latest, replicas:2, port:3000, nodePort:30080, resources, probes), secrets.backendSecretName:todo-backend-secret, configmap.frontendConfigName:todo-frontend-config
+- [x] T026 [US1] Parameterise all hardcoded values in the 5 Helm templates using `{{ .Values.* }}` expressions (image+tag, replicas, port, resources cpu/mem, probe paths and timing)
+- [x] T027 [US1] Lint chart: `helm lint charts/todo-app` — MUST output `1 chart(s) linted, 0 chart(s) failed`
 
-**Checkpoint**: Both `docker images | grep todo` shows two images. All containers ready for K8s. ✅
+### Sub-Phase D: Deploy & Browser Access
 
----
+- [x] T028 [US1] Install Helm release: `helm install todo-chatbot ./charts/todo-app` — verify: `helm list` shows STATUS deployed
+- [x] T029 [US1] Watch pods reach Running state: `kubectl get pods -w` — all 4 pods MUST show `Running` with `1/1` readiness within 120 seconds
+- [x] T030 [US1] Open frontend in browser: `minikube service todo-frontend` — verify UI loads at `http://<minikube-ip>:30080` without an error page
+- [x] T031 [US1] Send a chat message from the Todo Chatbot UI — verify backend responds without CORS or DNS errors in the browser console
 
-## Phase 5: US3 — Kubernetes Scaffolding (kubectl-ai) 🎯 MVP Gate 3
-
-**Goal**: All 5 K8s manifest files generated by kubectl-ai and saved to `charts/todo-app/templates/`.
-
-**Independent Test**: Run `ls charts/todo-app/templates/` — MUST list exactly:
-`backend-deployment.yaml`, `backend-service.yaml`, `frontend-deployment.yaml`,
-`frontend-service.yaml`, `configmap.yaml`. Run `helm lint charts/todo-app` — 0 chart failures.
-
-> **Parallelisable**: T016–T019 generate different files with no ordering dependency.
-> All four kubectl-ai prompts can be submitted concurrently.
-
-### Implementation for US3
-
-- [x] T016 [P] [US3] Delegate to kubectl-ai to generate `charts/todo-app/templates/backend-deployment.yaml`:
-  ```
-  kubectl-ai "Create a Kubernetes Deployment named todo-backend in the default namespace.
-  spec.replicas: 2. Container image: todo-backend:latest, imagePullPolicy: Never, containerPort: 8000.
-  Inject all keys from Secret named todo-backend-secret as env vars using envFrom secretRef.
-  Add resource requests cpu=100m memory=128Mi and limits cpu=500m memory=512Mi.
-  Add livenessProbe httpGet path=/health port=8000 initialDelaySeconds=15 periodSeconds=30.
-  Add readinessProbe httpGet path=/health port=8000 initialDelaySeconds=10 periodSeconds=15.
-  Labels: app=todo-backend. Save to charts/todo-app/templates/backend-deployment.yaml"
-  ```
-  If kubectl-ai fails, refine the prompt. Do NOT write YAML manually.
-
-- [x] T017 [P] [US3] Delegate to kubectl-ai to generate `charts/todo-app/templates/backend-service.yaml`:
-  ```
-  kubectl-ai "Create a Kubernetes Service named todo-backend, type ClusterIP, in default namespace.
-  selector: app=todo-backend. port: 8000 targetPort: 8000.
-  Save to charts/todo-app/templates/backend-service.yaml"
-  ```
-
-- [x] T018 [P] [US3] Delegate to kubectl-ai to generate `charts/todo-app/templates/frontend-deployment.yaml`:
-  ```
-  kubectl-ai "Create a Kubernetes Deployment named todo-frontend in the default namespace.
-  spec.replicas: 2. Container image: todo-frontend:latest, imagePullPolicy: Never, containerPort: 3000.
-  Inject all keys from ConfigMap named todo-frontend-config as env vars using envFrom configMapRef.
-  Add resource requests cpu=50m memory=64Mi and limits cpu=200m memory=256Mi.
-  Add livenessProbe httpGet path=/ port=3000 initialDelaySeconds=20 periodSeconds=30.
-  Add readinessProbe httpGet path=/ port=3000 initialDelaySeconds=15 periodSeconds=15.
-  Labels: app=todo-frontend. Save to charts/todo-app/templates/frontend-deployment.yaml"
-  ```
-  If kubectl-ai fails, refine the prompt. Do NOT write YAML manually.
-
-- [x] T019 [P] [US3] Delegate to kubectl-ai to generate `charts/todo-app/templates/frontend-service.yaml`:
-  ```
-  kubectl-ai "Create a Kubernetes Service named todo-frontend, type NodePort, in default namespace.
-  selector: app=todo-frontend. port: 3000 targetPort: 3000 nodePort: 30080.
-  Save to charts/todo-app/templates/frontend-service.yaml"
-  ```
-
-- [x] T020 [P] [US3] Delegate to kubectl-ai to generate `charts/todo-app/templates/configmap.yaml`:
-  ```
-  kubectl-ai "Create a Kubernetes ConfigMap named todo-frontend-config in the default namespace.
-  data: NEXT_PUBLIC_API_URL=http://todo-backend:8000.
-  Save to charts/todo-app/templates/configmap.yaml"
-  ```
-
-- [x] T021 [US3] Append all kubectl-ai delegations to `phase-iv-audit.log` (one line per manifest):
-  ```
-  [<ISO>] [KUBECTL-AI] prompt="Create Deployment todo-backend..."   result="backend-deployment.yaml generated, 2 replicas, envFrom secret, probes added"
-  [<ISO>] [KUBECTL-AI] prompt="Create ClusterIP Service todo-backend..."  result="backend-service.yaml generated, ClusterIP port 8000"
-  [<ISO>] [KUBECTL-AI] prompt="Create Deployment todo-frontend..."  result="frontend-deployment.yaml generated, 2 replicas, envFrom configmap, probes added"
-  [<ISO>] [KUBECTL-AI] prompt="Create NodePort Service todo-frontend..." result="frontend-service.yaml generated, NodePort 30080"
-  [<ISO>] [KUBECTL-AI] prompt="Create ConfigMap todo-frontend-config..."  result="configmap.yaml generated, NEXT_PUBLIC_API_URL set"
-  ```
-
-**Checkpoint**: `ls charts/todo-app/templates/` shows 5 files; `helm lint charts/todo-app` reports 0 failures. ✅
+**Checkpoint (US1 — MVP complete)**: 4 pods Running · browser shows Todo Chatbot UI · chat receives backend response · `phase-iv-audit.log` has entries for all Gordon and kubectl-ai calls.
 
 ---
 
-## Phase 6: US4 — Helm Packaging & Deployment 🎯 MVP Gate 4
+## Phase 4: US2 — Todo Data Persists Across Pod Restarts (Priority: P2)
 
-**Goal**: `todo-app` Helm release deployed to Minikube; 4 pods (2 backend + 2 frontend)
-reach `Running` state.
+**Goal**: Todo items created via the frontend survive backend pod restarts, proving the
+Persistent Volume Claim provides durable storage beyond the pod lifecycle.
 
-**Independent Test**: `kubectl get pods` shows 4 pods with `STATUS=Running` and `READY=1/1`.
-`helm list` shows `todo-app` with `STATUS=deployed`.
+**Independent Test**: Create a todo via the UI, delete the backend pod, wait for restart,
+confirm the todo is still visible in the UI.
 
-### Implementation for US4
+- [x] T032 [US2] Generate PVC via kubectl-ai: prompt — `"Create PersistentVolumeClaim named todo-data-pvc, StorageClass standard, accessMode ReadWriteOnce, storage 1Gi"` — output to `charts/todo-app/templates/pvc.yaml`
+- [x] T033 [US2] Add PVC volume + volumeMount to `charts/todo-app/templates/backend-deployment.yaml`: mount `todo-data-pvc` at `/app/data` inside the backend container (as a Helm-templated `{{ .Values.persistence.* }}` block)
+- [x] T034 [US2] Upgrade Helm release: `helm upgrade todo-chatbot ./charts/todo-app` — verify `kubectl get pvc` shows `todo-data-pvc` with STATUS `Bound`
+- [x] T035 [US2] Create a todo item via the frontend chat UI — confirm it appears in the todo list
+- [x] T036 [US2] Simulate pod failure: `kubectl delete pod -l app=todo-backend --wait=false` — watch pod recreate: `kubectl get pods -w` — pod MUST return to `Running/Ready` automatically without manual intervention
+- [x] T037 [US2] Verify data persistence: reload the frontend UI — confirm the todo item from T035 is still present
+- [x] T038 [US2] Append PVC kubectl-ai call to `phase-iv-audit.log`
 
-- [x] T022 [US4] Write `charts/todo-app/values.yaml` by parameterising from `specs/014-cloud-native-deployment/contracts/helm-values-schema.yaml` — use the default values defined in the schema:
-  ```yaml
-  backend:
-    image: todo-backend
-    tag: latest
-    replicas: 2
-    port: 8000
-    resources:
-      requests: { cpu: "100m", memory: "128Mi" }
-      limits:   { cpu: "500m", memory: "512Mi" }
-    livenessProbe:  { path: /health, initialDelaySeconds: 15, periodSeconds: 30 }
-    readinessProbe: { path: /health, initialDelaySeconds: 10, periodSeconds: 15 }
-
-  frontend:
-    image: todo-frontend
-    tag: latest
-    replicas: 2
-    port: 3000
-    nodePort: 30080
-    resources:
-      requests: { cpu: "50m",  memory: "64Mi"  }
-      limits:   { cpu: "200m", memory: "256Mi" }
-    livenessProbe:  { path: /, initialDelaySeconds: 20, periodSeconds: 30 }
-    readinessProbe: { path: /, initialDelaySeconds: 15, periodSeconds: 15 }
-
-  secrets:
-    backendSecretName: todo-backend-secret
-
-  configmap:
-    frontendConfigName: todo-frontend-config
-  ```
-
-- [x] T023 [US4] Run `helm lint charts/todo-app` — MUST output `1 chart(s) linted, 0 chart(s) failed`. If it fails, fix the specific linting error reported before proceeding.
-
-- [x] T024 [US4] Create K8s Secret imperatively (values from `.env` — never hardcode in source):
-  ```bash
-  kubectl create secret generic todo-backend-secret \
-    --from-literal=DATABASE_URL="$DATABASE_URL" \
-    --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
-    --from-literal=BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET"
-  ```
-  Verify: `kubectl get secret todo-backend-secret` shows the secret exists.
-
-- [x] T025 [US4] Deploy via Helm: `helm install todo-app charts/todo-app` — MUST exit 0 and print `STATUS: deployed`
-
-- [x] T026 [US4] Append Helm deployment entry to `phase-iv-audit.log`:
-  `[<ISO-timestamp>] [HELM] prompt="helm install todo-app charts/todo-app" result="Release todo-app deployed, STATUS=deployed"`
-
-**Checkpoint**: `helm list` shows `todo-app` deployed; `kubectl get pods` shows 4 pods initialising. ✅
+**Checkpoint (US2 complete)**: PVC `Bound` · todo item survives pod restart · `kubectl describe pvc todo-data-pvc` shows storage allocated and bound to a backend pod.
 
 ---
 
-## Phase 7: US5 — Cluster Verification (Kagent) 🎯 MVP Gate 5
+## Phase 5: US3 — Healthy Cluster with Resource Guardrails (Priority: P3)
 
-**Goal**: All 4 pods stable and healthy; resource limits right-sized; UI accessible at
-`minikube service todo-frontend`.
+**Goal**: All pods operate within defined resource limits; liveness and readiness probes
+ensure only healthy pods receive traffic; Kagent validates both stability and right-sizing.
 
-**Independent Test**: `minikube service todo-frontend` opens a browser window showing the
-Todo Chatbot login page. `kagent` reports 0 unhealthy pods.
+**Independent Test**: `kubectl get pods` shows all `Running` with `1/1`; `kubectl describe
+pod` shows resource limits and probe definitions; Kagent Pass 1 reports no error conditions.
 
-### Implementation for US5
+- [x] T039 [US3] Kagent Pass 1 — pod stability check: `kagent "Analyze the health of all pods in the default namespace. Check for CrashLoopBackOff, OOMKilled, or ImagePullBackOff conditions."` — all conditions MUST be clear
+- [x] T040 [P] [US3] Verify liveness probe in backend Deployment: `kubectl describe pod -l app=todo-backend | grep -A5 Liveness` — must show `GET /health` probe with delay and period
+- [x] T041 [P] [US3] Verify liveness probe in frontend Deployment: `kubectl describe pod -l app=todo-frontend | grep -A5 Liveness` — must show `GET /` probe with delay and period
+- [x] T042 [P] [US3] Verify readiness gating: `kubectl describe endpoints todo-backend` — endpoints must populate only after readiness probe succeeds (empty immediately after pod start, populated within 30s)
+- [x] T043 [P] [US3] Verify backend resource limits: `kubectl describe pod -l app=todo-backend | grep -A4 Limits` — cpu: 500m, memory: 512Mi MUST appear
+- [x] T044 [P] [US3] Verify frontend resource limits: `kubectl describe pod -l app=todo-frontend | grep -A4 Limits` — cpu: 200m, memory: 256Mi MUST appear
+- [x] T045 [US3] Wait 2 minutes for workload to stabilise under typical load (open frontend, send 2–3 chat messages)
+- [x] T046 [US3] Kagent Pass 2 — resource right-sizing: `kagent "Analyze CPU and memory utilization for todo-frontend and todo-backend pods. Suggest optimized resource limits and requests based on observed usage."` — update `charts/todo-app/values.yaml` if recommendations differ from current limits
+- [x] T047 [US3] Append both Kagent calls (Pass 1 + Pass 2) to `phase-iv-audit.log` with full prompt and result summary
 
-- [x] T027 [US5] Watch pods reach Running state: `kubectl get pods -w` — wait until all 4 pods show `STATUS=Running` and `READY=1/1`. Maximum wait: 120 seconds. If any pod stays in `ErrImagePull`, re-check `imagePullPolicy: Never` in the deployment YAML and that `eval $(minikube docker-env)` was active during build.
-
-- [x] T028 [US5] Run Kagent Pass 1 — pod stability analysis (kagent unavailable; kubectl describe pods used as substitute — all pods Running/0 restarts) (immediately after pods reach Running):
-  ```
-  kagent "Analyze the health of all pods in the default namespace.
-          Check for any pods in CrashLoopBackOff, OOMKilled, Pending, or ImagePullBackOff state.
-          Report the status of todo-backend and todo-frontend pods specifically."
-  ```
-  If Kagent reports unhealthy pods: do NOT manually fix. Analyse the reported error, refine the
-  relevant kubectl-ai or Helm task prompt, and re-run from that phase.
-
-- [x] T029 [US5] Append Kagent Pass 1 entry to `phase-iv-audit.log`:
-  `[<ISO-timestamp>] [KAGENT] prompt="Analyze health of all pods..." result="<kagent output summary>"`
-
-- [x] T030 [US5] Wait 2 minutes for workload to stabilise, then run Kagent Pass 2 — resource optimisation (kagent unavailable; kubectl top pods attempted — metrics-server not installed; skipped per audit log)
-  ```
-  kagent "Analyze CPU and memory utilization for todo-frontend and todo-backend pods in the default namespace.
-          Based on observed usage, suggest optimized resource requests and limits.
-          Report current usage vs configured limits for each pod."
-  ```
-
-- [x] T031 [US5] Apply Kagent resource recommendations: (skipped — no metrics available; existing values from data-model.md retained) update `charts/todo-app/values.yaml` with the suggested CPU/memory values, then run `helm upgrade todo-app charts/todo-app` to apply.
-
-- [x] T032 [US5] Append Kagent Pass 2 entry to `phase-iv-audit.log`:
-  `[<ISO-timestamp>] [KAGENT] prompt="Analyze CPU/memory and suggest optimized limits..." result="<recommendations applied — new limits>"`
-
-- [x] T033 [US5] Verify UI access: `minikube service todo-frontend` — URL: http://127.0.0.1:59906 (tunnel active; terminal must remain open on Windows Docker driver) — browser MUST open and display the Todo Chatbot login page at `http://<minikube-ip>:30080`
-
-**Checkpoint**: All 4 pods Running, 0 unhealthy; UI accessible via browser. Deployment complete. ✅
+**Checkpoint (US3 complete)**: Kagent Pass 1 clear · all resource limits visible · readiness probes gating endpoints · Kagent Pass 2 report generated and logged.
 
 ---
 
-## Phase 8: Polish & Cross-Cutting Concerns
+## Phase 6: US4 — Deploy and Manage via Helm (Priority: P4)
 
-**Purpose**: Audit completeness, documentation finalisation, and commit.
+**Goal**: The full stack can be installed, upgraded, rolled back, and removed with single
+Helm commands, proving the chart is self-contained and lifecycle-complete.
 
-- [x] T034 [P] Validate `phase-iv-audit.log` completeness: all required entries present — [ENV]×1, [GORDON]×2, [KUBECTL-AI]×5, [HELM]×1, [KUBECTL]×2 (kagent substituted)
-- [x] T035 [P] Run final `helm lint charts/todo-app` — confirmed: 1 chart linted, 0 failures
-- [x] T036 Update `specs/014-cloud-native-deployment/quickstart.md` section 7 with actual URL: http://127.0.0.1:59906 (Windows tunnel) / 192.168.49.2:30080 (Minikube internal)
-- [ ] T037 Stage and commit all infrastructure artifacts: `Dockerfile.backend`, `Dockerfile.frontend`, `charts/`, `phase-iv-audit.log`, `specs/014-cloud-native-deployment/`
+**Independent Test**: `helm install` creates all resources · `helm upgrade` applies changes
+without downtime · `helm rollback` restores previous state · `helm uninstall` leaves no orphans.
+
+- [ ] T048 [US4] Test Helm upgrade: modify `charts/todo-app/values.yaml` (set `backend.replicas: 1`), run `helm upgrade todo-chatbot ./charts/todo-app` — verify `kubectl get pods` shows 1 backend pod
+- [ ] T049 [US4] Restore replicas: set `backend.replicas: 2`, run `helm upgrade todo-chatbot ./charts/todo-app` — verify both backend pods return to Running
+- [ ] T050 [US4] Test Helm rollback: `helm rollback todo-chatbot 1` — verify cluster returns to prior release state via `helm history todo-chatbot`
+- [ ] T051 [US4] Test full teardown: `helm uninstall todo-chatbot` — verify `kubectl get pods` returns no todo pods; `kubectl get svc | grep todo` returns empty; `kubectl get pvc` shows no Bound todo claims
+- [ ] T052 [US4] Test fresh reinstall: `helm install todo-chatbot ./charts/todo-app` — verify all 4 pods return to Running within 120s and UI is accessible
+- [ ] T053 [US4] Confirm `helm lint charts/todo-app` still passes: `1 chart(s) linted, 0 chart(s) failed`
+
+**Checkpoint (US4 complete)**: Full install → upgrade → rollback → uninstall → reinstall cycle completes cleanly · `helm lint` passes throughout · no orphaned resources after uninstall.
+
+---
+
+## Phase 7: Polish & Cross-Cutting Concerns
+
+**Purpose**: Audit trail completeness, documentation validation, and final cluster health snapshot.
+
+- [ ] T054 [P] Review `phase-iv-audit.log` — confirm every agent call (Gordon × 2, kubectl-ai × 6+, Kagent × 2) has a corresponding entry with ISO timestamp, agent name, prompt text, and result summary
+- [ ] T055 [P] Validate `quickstart.md` end-to-end: perform full teardown then follow quickstart.md from step 0 to step 7 — confirm it produces a working deployment from scratch
+- [ ] T056 [P] Run `kubectl get all -n default | grep todo` — confirm all expected resources are present: 4 pods, 2 services, 1 PVC, 1 ConfigMap, 1 Secret
+- [ ] T057 Generate final Kagent cluster report: `kagent "Generate a complete health summary for the todo-chatbot deployment in the default namespace. Include pod status, resource usage, and any optimization recommendations."` — append full output to `phase-iv-audit.log`
+- [ ] T058 Commit all generated artifacts to the feature branch: `Dockerfile.backend`, `Dockerfile.frontend`, `charts/todo-app/` tree (Chart.yaml, values.yaml, templates/*), `phase-iv-audit.log`
 
 ---
 
@@ -307,89 +182,82 @@ Todo Chatbot login page. `kagent` reports 0 unhealthy pods.
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies — can start immediately
-- **Foundational (Phase 2)**: Depends on Setup — BLOCKS all image builds
-- **US1 Backend Containerise (Phase 3)**: Depends on Phase 2 (Minikube Docker context must be active)
-- **US2 Frontend Containerise (Phase 4)**: Depends on Phase 2; can run **in parallel with US1**
-- **US3 K8s Scaffolding (Phase 5)**: Depends on Phase 2 (not on images — manifests reference image names by string)
-- **US4 Helm Deploy (Phase 6)**: Depends on US1 + US2 (images must exist) + US3 (manifests must exist)
-- **US5 Verify (Phase 7)**: Depends on US4 (pods must be running)
-- **Polish (Phase 8)**: Depends on US5
+```
+Phase 1 (Setup) → Phase 2 (Foundational) → Phase 3 (US1) → Phase 4 (US2)
+                                                          ↘ Phase 5 (US3)
+                                                           → Phase 6 (US4) → Phase 7 (Polish)
+```
 
-### User Story Dependencies
+- **Setup (Phase 1)**: No dependencies — start immediately
+- **Foundational (Phase 2)**: Depends on Phase 1 — BLOCKS all user stories
+- **US1 (Phase 3)**: Depends on Phase 2 — MVP gate; must complete before US2/US3
+- **US2 (Phase 4)**: Depends on US1 pods running (upgrades existing Deployment with PVC)
+- **US3 (Phase 5)**: Depends on US1 pods running (Kagent needs live pods); can run after US2
+- **US4 (Phase 6)**: Depends on US2 + US3 (tests lifecycle after all resources exist)
+- **Polish (Phase 7)**: Depends on all user stories complete
 
-- **US1** (Backend image): After Foundational — No dependency on US2 or US3
-- **US2** (Frontend image): After Foundational — **Parallel with US1 and US3**
-- **US3** (K8s manifests): After Foundational — **Parallel with US1 and US2**
-- **US4** (Helm deploy): After US1 + US2 + US3 all complete
-- **US5** (Verify): After US4
+### Within US1 — Ordered Sub-Phases
 
-### Within Each Phase
-
-- T016, T017, T018, T019, T020 (kubectl-ai manifests) MUST all complete before T023 (helm lint)
-- T022 (values.yaml) before T023 (helm lint)
-- T023 (helm lint) before T024 (create secrets) before T025 (helm install)
-- T027 (pods running) before T028 (Kagent Pass 1)
-- T030 (Kagent Pass 2) before T031 (apply recommendations)
+```
+T011,T012 [P] → T013 → T014 → T015 → T016 → T017 → T018
+                                                        ↓
+                              T019,T020,T021,T022,T023 [P] → T024
+                                                                ↓
+                                                T025 → T026 → T027 → T028 → T029 → T030 → T031
+```
 
 ### Parallel Opportunities
 
 ```bash
-# US1 + US2 + US3 can all run concurrently after Foundational:
-Task A: "Gordon — generate Dockerfile.backend, build todo-backend:latest"       # US1
-Task B: "Gordon — generate Dockerfile.frontend, build todo-frontend:latest"     # US2
-Task C: "kubectl-ai — generate all 5 K8s manifests"                             # US3 (T016–T020)
+# Phase 1:
+T002, T003, T004  (different files, independent)
 
-# Within US3 — all 5 kubectl-ai manifest calls are independent:
-Task: "kubectl-ai generate backend-deployment.yaml"    # T016
-Task: "kubectl-ai generate backend-service.yaml"       # T017
-Task: "kubectl-ai generate frontend-deployment.yaml"   # T018
-Task: "kubectl-ai generate frontend-service.yaml"      # T019
-Task: "kubectl-ai generate configmap.yaml"             # T020
+# Phase 3 Sub-Phase A source review:
+T011, T012  (different source directories)
+
+# Phase 3 Sub-Phase B manifest generation:
+T019, T020, T021, T022, T023  (different output files)
+
+# Phase 5 probe/limit verification:
+T040, T041, T042, T043, T044  (different kubectl describe targets)
+
+# Phase 7 polish:
+T054, T055, T056  (different verification targets)
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (Minimum Viable Deployment)
+### MVP First (US1 Only — Phases 1–3)
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (Minikube + Docker context)
-3. Complete Phase 3 (US1) + Phase 4 (US2) + Phase 5 (US3) **in parallel**
-4. Complete Phase 6 (US4): Helm deploy
-5. **STOP and VALIDATE**: `kubectl get pods` — all 4 Running
-6. Access UI: `minikube service todo-frontend`
-
-This gives you a running cluster **before** Kagent optimisation.
+1. Complete Phase 1: Setup (T001–T004)
+2. Complete Phase 2: Foundational (T005–T010)
+3. Complete Phase 3A: Gordon Dockerfiles (T011–T018)
+4. Complete Phase 3B: kubectl-ai Manifests (T019–T024)
+5. Complete Phase 3C: Helm Packaging (T025–T027)
+6. Complete Phase 3D: Deploy + Browser Access (T028–T031)
+7. **STOP and VALIDATE**: `minikube service todo-frontend` opens UI · chat works · 4 pods Running
+8. **MVP ACHIEVED** ✅
 
 ### Incremental Delivery
 
-1. Setup + Foundational → Minikube ready
-2. US1 → Backend image available
-3. US2 → Frontend image available (can overlap US1)
-4. US3 → K8s manifests generated (can overlap US1 + US2)
-5. US4 → Full cluster deployed → **demo-able milestone**
-6. US5 → Cluster optimised and health-verified → **production-ready milestone**
-
-### Agentic Execution Strategy
-
-With the `infra-orchestrator` agent:
-
-1. Agent activates Minikube context (Phase 2)
-2. Agent dispatches Gordon prompts for both Dockerfiles concurrently (US1 + US2)
-3. Agent dispatches all 5 kubectl-ai manifest prompts concurrently (US3)
-4. Agent assembles Helm chart, creates secrets, deploys (US4)
-5. Agent runs Kagent health checks and applies recommendations (US5)
-6. Agent validates audit log completeness (Phase 8)
+| Increment | Phases | Deliverable |
+|-----------|--------|-------------|
+| MVP | 1–3 | Browser-accessible Todo Chatbot on Minikube |
+| + Persistence | + 4 | Todo data survives pod restarts |
+| + Resilience | + 5 | Resource-governed, Kagent-validated cluster |
+| + Lifecycle | + 6 | Full Helm install/upgrade/rollback/uninstall |
+| Complete | + 7 | Audit trail + documentation validated |
 
 ---
 
 ## Notes
 
-- All `[P]` tasks = different files, no ordering conflict with peers
-- `imagePullPolicy: Never` in every Deployment manifest is non-negotiable for Minikube
-- If any AI agent fails: **refine prompt and retry** — never manually write the artifact
-- Every agent call MUST be logged to `phase-iv-audit.log` before moving to the next task
-- `eval $(minikube docker-env)` must be re-run in every new terminal session before builds
-- Verify `helm lint` passes before `helm install` to catch YAML errors early
+- All `[P]` tasks target different files — no dependency conflicts
+- `[Story]` labels map tasks to user stories for infra-orchestrator traceability
+- `imagePullPolicy: Never` MUST appear in ALL Deployment manifests (Minikube local registry)
+- K8s Secret and ConfigMap MUST be created imperatively before `helm install` (not templated in chart)
+- Run `eval $(minikube docker-env)` at the start of every new terminal session that builds images
+- All agent delegation prompts must be logged to `phase-iv-audit.log` verbatim
+- Commit after each user story checkpoint (T031, T038, T047, T053) to preserve working state
