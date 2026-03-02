@@ -10,6 +10,6 @@ spec:
   selector:
     app: todo-backend
   ports:
-    - port: 8000
-      targetPort: 8000
+    - port: {{ .Values.backend.port }}
+      targetPort: {{ .Values.backend.port }}
       protocol: TCP

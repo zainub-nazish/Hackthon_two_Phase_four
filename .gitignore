@@ -87,3 +87,13 @@ frontend/tmpclaude-*
 
 # Misc artifacts
 =0.79.0
+
+# Kubernetes / Docker secrets (Phase IV)
+kubeconfig*
+.kube/
+*.secret.yaml
+secrets/
+*.key
+*.crt
+*.pem
+phase-iv-audit.log.bak

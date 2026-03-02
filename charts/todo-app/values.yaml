@@ -46,3 +46,10 @@ secrets:
 
 configmap:
   frontendConfigName: todo-frontend-config
+  apiUrl: "http://todo-backend:8000"
+
+persistence:
+  enabled: true
+  claimName: todo-data-pvc
+  storageClass: standard
+  size: 1Gi

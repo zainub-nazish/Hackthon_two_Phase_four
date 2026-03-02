@@ -1,16 +1,25 @@
 # Implementation Plan: Phase IV — Cloud-Native Todo Chatbot Deployment
 
-**Branch**: `013-todo-ai-chatbot` | **Date**: 2026-02-24 | **Spec**: user input (Phase IV brief)
-**Input**: User description — "Phase IV: Cloud Native Todo Chatbot Deployment on Minikube"
+**Branch**: `014-cloud-native-deployment` | **Date**: 2026-03-01 | **Spec**: [spec.md](./spec.md)
+**Input**: User description — "Phase IV: Cloud Native Todo Chatbot Deployment on Minikube (Agentic Dev Stack)"
 
 ---
 
 ## Summary
 
-Deploy the Phase III Todo Chatbot (FastAPI backend + Next.js frontend, already implemented
-with 98/98 tests passing) to a local Minikube cluster using the Agentic Dev Stack. No
-Dockerfiles or Kubernetes manifests are hand-written — all artifacts are generated via Gordon
-(docker ai), kubectl-ai, and Kagent, then packaged into a Helm chart at `charts/todo-app/`.
+Deploy the Phase III Todo Chatbot (FastAPI backend + Next.js frontend, implemented with 98/98
+tests passing) to a local Minikube cluster using the Agentic Dev Stack. No Dockerfiles or
+Kubernetes manifests are hand-written — all artifacts are generated via Gordon (docker ai),
+kubectl-ai, and Kagent, then packaged into a Helm chart at `charts/todo-app/`.
+
+Organized into **4 phases** per the user-approved plan:
+
+| Phase | Focus | Agent |
+|-------|-------|-------|
+| 1 | Environment & Containerization | Gordon (docker ai) |
+| 2 | Helm Chart Architecture | kubectl-ai |
+| 3 | Deployment & Orchestration | Minikube + Helm |
+| 4 | Validation & Troubleshooting | Kagent |
 
 ---
 
@@ -34,18 +43,18 @@ Dockerfiles or Kubernetes manifests are hand-written — all artifacts are gener
 
 | Principle | Gate | Status | Notes |
 |-----------|------|--------|-------|
-| **I. Spec-First** | Plan exists before any Dockerfile or manifest is created | ✅ PASS | This plan precedes all implementation |
+| **I. Spec-First** | Plan exists before any Dockerfile or manifest is created | ✅ PASS | spec.md + this plan precede all implementation |
 | **II. Security by Design** | Secrets in K8s Secret objects, not in values.yaml or source | ✅ PASS | `todo-backend-secret` created imperatively; never committed |
 | **III. Deterministic Behavior** | All agent prompts are explicit and logged; audit trail maintained | ✅ PASS | `phase-iv-audit.log` records every delegation |
 | **IV. Separation of Concerns** | Frontend, backend, secrets, and config are separate K8s resources | ✅ PASS | ClusterIP for backend, NodePort for frontend |
 | **V. Reproducibility & Traceability** | `phase-iv-audit.log` + Helm chart in Git = full rebuild from source | ✅ PASS | Any developer can run `helm install` from this repo |
 | **VI. API Standards** | Internal communication via K8s DNS (`http://todo-backend:8000`) | ✅ PASS | No hardcoded IPs; ClusterIP DNS used |
 | **VII. AI Agent Safety** | If Gordon/kubectl-ai fails → refine prompt, never manually fix | ✅ PASS | Enforced by Constitution Principle X |
-| **VIII. Stateless Conversation** | Backend pods are stateless; conversation state in Neon DB | ✅ PASS | 2 replicas can serve any request |
+| **VIII. Stateless Services** | Backend pods are stateless; conversation state in Neon DB | ✅ PASS | 2 replicas can serve any request |
 | **IX. Agentic Infrastructure Ops** | Gordon → kubectl-ai → Kagent → Helm workflow strictly followed | ✅ PASS | Each phase uses the designated agent |
 | **X. No Manual Artifact Coding** | Zero hand-written Dockerfiles or K8s YAML | ✅ PASS | All artifacts AI-generated; audit-logged |
 
-**All 10 gates PASS. Proceeding to Phase 0.**
+**All 10 gates PASS. Proceeding to Phase 1.**
 
 ---
 
@@ -55,13 +64,16 @@ Dockerfiles or Kubernetes manifests are hand-written — all artifacts are gener
 
 ```text
 specs/014-cloud-native-deployment/
-├── plan.md              ← This file
+├── spec.md              ← Feature specification ✅
+├── plan.md              ← This file ✅
 ├── research.md          ← Phase 0 complete ✅
-├── data-model.md        ← Phase 1 complete ✅ (cluster topology + resource specs)
-├── quickstart.md        ← Phase 1 complete ✅
+├── data-model.md        ← Cluster topology + resource specs ✅
+├── quickstart.md        ← Step-by-step deploy guide ✅
+├── checklists/
+│   └── requirements.md  ← Spec quality checklist ✅
 ├── contracts/
-│   └── helm-values-schema.yaml   ← Phase 1 complete ✅
-└── tasks.md             ← Phase 2 output (/sp.tasks — NOT created by /sp.plan)
+│   └── helm-values-schema.yaml  ← Helm values contract ✅
+└── tasks.md             ← Phase 2 output (/sp.tasks)
 ```
 
 ### Source Code (repository root)
@@ -70,7 +82,7 @@ specs/014-cloud-native-deployment/
 charts/
 └── todo-app/
     ├── Chart.yaml                         # Helm chart metadata
-    ├── values.yaml                        # Parameterised defaults (Helm: backend.*, frontend.*)
+    ├── values.yaml                        # Parameterised defaults (backend.*, frontend.*)
     └── templates/
         ├── backend-deployment.yaml        # Generated by kubectl-ai
         ├── backend-service.yaml           # Generated by kubectl-ai (ClusterIP)
@@ -83,9 +95,6 @@ Dockerfile.backend                         # Generated by Gordon (docker ai) —
 Dockerfile.frontend                        # Generated by Gordon (docker ai) — NOT hand-written
 ```
 
-**Structure Decision**: Web application (Option 2) — backend and frontend as separate
-top-level concerns. Infrastructure lives in `charts/` at repository root per Helm convention.
-
 ---
 
 ## Complexity Tracking
@@ -93,8 +102,8 @@ top-level concerns. Infrastructure lives in `charts/` at repository root per Hel
 > *No constitution violations to justify — all 10 gates pass.*
 
 | Potential Complexity | Why Acceptable | Simpler Alternative Rejected Because |
-|----------------------|---------------|-------------------------------------|
-| Two Dockerfiles | Backend (Python) and frontend (Node) require completely different base images and build processes | Single image not viable — different runtimes |
+|----------------------|----------------|--------------------------------------|
+| Two Dockerfiles | Backend (Python) and frontend (Node) require different base images and build processes | Single image not viable — different runtimes |
 | K8s Secret + ConfigMap split | Secrets contain credentials; config contains non-sensitive URLs | Putting DATABASE_URL in ConfigMap would expose credentials in plaintext |
 
 ---
@@ -116,30 +125,215 @@ All NEEDS CLARIFICATION resolved. Full rationale in `research.md`.
 
 ---
 
-## Phase 1: Design Summary
+## Phase 1: Environment & Containerization (Gordon)
 
-### Cluster Topology (from `data-model.md`)
+**Goal**: Review source code for port and env requirements, then generate optimized multi-stage
+Dockerfiles via Gordon. Build and verify images inside Minikube's Docker context.
 
+### Task 1.1 — Review Source for Port & Env Requirements
+
+| Service | Port | Key Env Vars |
+|---------|------|-------------|
+| `todo-backend` (FastAPI) | 8000 | `DATABASE_URL`, `OPENAI_API_KEY`, `BETTER_AUTH_SECRET` |
+| `todo-frontend` (Next.js) | 3000 | `NEXT_PUBLIC_API_URL=http://todo-backend:8000` |
+
+### Task 1.2 — Generate Dockerfiles via Gordon
+
+**Backend** (`Dockerfile.backend` — Gordon prompt):
 ```
-Minikube: default namespace
-  ├── Secret: todo-backend-secret  (DATABASE_URL, OPENAI_API_KEY, BETTER_AUTH_SECRET)
-  ├── ConfigMap: todo-frontend-config  (NEXT_PUBLIC_API_URL=http://todo-backend:8000)
-  ├── Deployment: todo-backend  → 2 pods (todo-backend:latest, Never, port 8000)
-  ├── Service: todo-backend  (ClusterIP, port 8000)
-  ├── Deployment: todo-frontend  → 2 pods (todo-frontend:latest, Never, port 3000)
-  └── Service: todo-frontend  (NodePort, port 3000 → 30080)
+docker ai "Create a multi-stage Dockerfile for a FastAPI Python 3.11 application.
+Stage 1: install all dependencies from backend/requirements.txt.
+Stage 2: copy only installed packages and source. Use python:3.11-slim as base.
+Run as non-root user appuser. Expose port 8000.
+CMD: uvicorn backend.main:app --host 0.0.0.0 --port 8000"
 ```
 
-### Helm Values Contract (from `contracts/helm-values-schema.yaml`)
+**Frontend** (`Dockerfile.frontend` — Gordon prompt):
+```
+docker ai "Create a multi-stage Dockerfile for a Next.js 14 application in frontend/.
+Stage 1 (deps): npm ci from package.json.
+Stage 2 (builder): npm run build, NEXT_TELEMETRY_DISABLED=1.
+Stage 3 (runner): copy .next/standalone from builder. Use node:18-alpine.
+Run as non-root user nextjs:nodejs. Expose port 3000. CMD: node server.js"
+```
+
+### Task 1.3 — Build & Verify Images in Minikube Context
+
+```bash
+eval $(minikube docker-env)           # Switch to Minikube Docker daemon
+docker build -t todo-backend:latest -f Dockerfile.backend .
+docker build -t todo-frontend:latest -f Dockerfile.frontend ./frontend
+docker images | grep todo             # Both images must appear
+```
+
+**NFR targets**: backend image < 300MB · frontend image < 150MB
+
+---
+
+## Phase 2: Helm Chart Architecture (kubectl-ai)
+
+**Goal**: Scaffold the Helm chart structure and generate all Kubernetes manifests using
+kubectl-ai — Deployments (with liveness/readiness probes), Services, PVC, and ConfigMap.
+
+### Task 2.1 — Scaffold Helm Chart
+
+```bash
+helm create charts/todo-app
+rm -rf charts/todo-app/templates/*    # Remove auto-generated stubs
+```
+
+### Task 2.2 — Define `values.yaml`
 
 ```yaml
-backend:  { image, tag, replicas: 2, port: 8000, resources, livenessProbe, readinessProbe }
-frontend: { image, tag, replicas: 2, port: 3000, nodePort: 30080, resources, livenessProbe, readinessProbe }
-secrets:  { backendSecretName: todo-backend-secret }
-configmap: { frontendConfigName: todo-frontend-config }
+backend:
+  image: todo-backend
+  tag: latest
+  replicas: 2
+  port: 8000
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+
+frontend:
+  image: todo-frontend
+  tag: latest
+  replicas: 2
+  port: 3000
+  nodePort: 30080
+  resources:
+    requests: { cpu: "50m",  memory: "64Mi"  }
+    limits:   { cpu: "200m", memory: "256Mi" }
+
+secrets:
+  backendSecretName: todo-backend-secret
+
+configmap:
+  frontendConfigName: todo-frontend-config
 ```
 
-### Agent Delegation Map
+### Task 2.3 — Generate Manifests via kubectl-ai
+
+**Deployment.yaml** (with liveness/readiness probes):
+```
+kubectl-ai "Create a Kubernetes Deployment for todo-backend.
+  image: todo-backend:latest, imagePullPolicy: Never, replicas: 2, port: 8000.
+  Inject all keys from Secret todo-backend-secret as environment variables.
+  Resources: requests cpu=100m memory=128Mi, limits cpu=500m memory=512Mi.
+  Add liveness and readiness probes on GET /health every 30s.
+  Output to charts/todo-app/templates/backend-deployment.yaml"
+```
+
+**Service.yaml** (NodePort for Frontend, ClusterIP for Backend):
+```
+kubectl-ai "Create a ClusterIP Service for todo-backend.
+  Selector app=todo-backend, port 8000 → targetPort 8000.
+  Output to charts/todo-app/templates/backend-service.yaml"
+
+kubectl-ai "Create a NodePort Service for todo-frontend.
+  Selector app=todo-frontend, port 3000 → targetPort 3000 → nodePort 30080.
+  Output to charts/todo-app/templates/frontend-service.yaml"
+```
+
+**PersistentVolumeClaim.yaml** (database storage if local DB is used):
+```
+kubectl-ai "Create a PersistentVolumeClaim named todo-data-pvc.
+  StorageClass standard, accessMode ReadWriteOnce, storage 1Gi.
+  Output to charts/todo-app/templates/pvc.yaml"
+```
+
+> **Note**: Primary database is Neon PostgreSQL (external). PVC used for local data
+> cache / fallback if offline development is needed.
+
+**Chart validation**:
+```bash
+helm lint charts/todo-app    # Must pass 0 failures
+```
+
+---
+
+## Phase 3: Deployment & Orchestration (Minikube)
+
+**Goal**: Start Minikube with addons, create pre-install secrets, and execute `helm install`.
+Verify all pods reach Running/Ready within 120 seconds.
+
+### Task 3.1 — Start Minikube & Enable Addons
+
+```bash
+minikube start
+minikube addons enable dashboard
+minikube addons enable metrics-server
+minikube status    # host/kubelet/apiserver must all show Running
+```
+
+### Pre-install: Create Secrets & ConfigMap
+
+```bash
+kubectl create secret generic todo-backend-secret \
+  --from-literal=DATABASE_URL="$DATABASE_URL" \
+  --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+  --from-literal=BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET"
+
+kubectl create configmap todo-frontend-config \
+  --from-literal=NEXT_PUBLIC_API_URL="http://todo-backend:8000"
+```
+
+### Task 3.2 — Execute Helm Install
+
+```bash
+helm install todo-chatbot ./charts/todo-app
+kubectl get pods -w    # Watch: wait for 4/4 pods Running/Ready 1/1
+```
+
+**Checkpoint**: All pods Running within 120s.
+
+### Task 3.3 — Kagent Resource Analysis (Pass 1)
+
+```bash
+kagent "Analyze the health of all pods in the default namespace.
+        Check for CrashLoopBackOff, OOMKilled, or ImagePullBackOff conditions."
+```
+
+Log Kagent output to `phase-iv-audit.log`.
+
+---
+
+## Phase 4: Validation & Troubleshooting
+
+**Goal**: Verify end-to-end connectivity (frontend ↔ backend), test Kubernetes self-healing,
+and generate a final cluster health report via Kagent.
+
+### Task 4.1 — Backend Connectivity via Frontend (DNS Check)
+
+```bash
+minikube service todo-frontend          # Opens browser to http://<minikube-ip>:30080
+# In browser: send a chat message — confirm backend responds without CORS/DNS error
+
+# Manual DNS verification from inside a pod:
+kubectl exec -it <frontend-pod> -- curl http://todo-backend:8000/health
+# Expected: {"status": "ok"}
+```
+
+### Task 4.2 — Simulate Pod Failure (Self-Healing Test)
+
+```bash
+kubectl delete pod -l app=todo-backend --wait=false
+kubectl get pods -w    # K8s should recreate pod automatically
+# Verify: todo count unchanged after pod restarts (PVC persistence check)
+```
+
+### Task 4.3 — Final Cluster Health Report (Kagent)
+
+```bash
+# Wait 2 minutes post-deploy for workload to stabilise, then:
+kagent "Analyze CPU and memory utilization for todo-frontend and todo-backend pods.
+        Suggest resource limits and requests based on observed usage."
+```
+
+This generates the final optimisation report — append to `phase-iv-audit.log`.
+
+---
+
+## Agent Delegation Map
 
 | Task | Agent | Prompt Pattern |
 |------|-------|---------------|
@@ -147,42 +341,9 @@ configmap: { frontendConfigName: todo-frontend-config }
 | Frontend Dockerfile | Gordon (`docker ai`) | "Create multi-stage Dockerfile for Next.js 14 standalone…" |
 | Backend Deployment + Service | kubectl-ai | "Create Deployment for todo-backend, 2 replicas, ClusterIP…" |
 | Frontend Deployment + Service | kubectl-ai | "Create Deployment + NodePort Service for todo-frontend…" |
+| PVC | kubectl-ai | "Create PVC todo-data-pvc, 1Gi, ReadWriteOnce…" |
 | Post-deploy health check | Kagent | "Analyze health of all pods in default namespace…" |
 | Resource optimisation | Kagent | "Analyze CPU/memory and suggest right-sized limits…" |
-
----
-
-## Deployment Workflow (5 Phases)
-
-### Phase 1 — Environment Init
-1. `minikube start` + verify context
-2. `eval $(minikube docker-env)` — switch Docker CLI to Minikube's daemon
-3. Log to `phase-iv-audit.log`: `[timestamp] [ENV] minikube context activated`
-
-### Phase 2 — Containerisation (Gordon)
-1. Gordon generates `Dockerfile.backend` → build `todo-backend:latest`
-2. Gordon generates `Dockerfile.frontend` → build `todo-frontend:latest`
-3. Verify both images visible: `docker images | grep todo`
-4. Log each Gordon call to `phase-iv-audit.log`
-
-### Phase 3 — K8s Scaffolding (kubectl-ai)
-1. kubectl-ai generates `backend-deployment.yaml` + `backend-service.yaml`
-2. kubectl-ai generates `frontend-deployment.yaml` + `frontend-service.yaml`
-3. Log each kubectl-ai call to `phase-iv-audit.log`
-
-### Phase 4 — Helm Packaging
-1. Organise templates into `charts/todo-app/templates/`
-2. Parameterise `values.yaml` from `contracts/helm-values-schema.yaml`
-3. `helm lint charts/todo-app` — must pass 0 failures
-4. Create K8s Secret + ConfigMap (imperatively, before install)
-5. `helm install todo-app charts/todo-app`
-
-### Phase 5 — Verification (Kagent)
-1. `kubectl get pods -w` — wait for 4/4 pods Running
-2. Kagent Pass 1: pod stability analysis
-3. Wait 2 minutes; Kagent Pass 2: resource optimisation
-4. `minikube service todo-frontend` — browser verification
-5. Log all Kagent outputs to `phase-iv-audit.log`
 
 ---
 
@@ -196,6 +357,7 @@ configmap: { frontendConfigName: todo-frontend-config }
 | Helm lint | 0 failures | `helm lint charts/todo-app` |
 | UI accessibility | Frontend reachable at `minikube service todo-frontend` | Browser test |
 | Audit completeness | Every agent call logged in `phase-iv-audit.log` | Manual review |
+| Data persistence | Todos survive pod restart | Delete pod, verify data intact |
 
 ---
 
@@ -203,7 +365,7 @@ configmap: { frontendConfigName: todo-frontend-config }
 
 | Risk | Blast Radius | Mitigation |
 |------|-------------|-----------|
-| Wrong Docker context (building on host) | Images invisible to Minikube, ErrImagePull | Verify `eval $(minikube docker-env)` before every build session; check `docker ps` for Minikube containers |
+| Wrong Docker context (building on host) | Images invisible to Minikube → ErrImagePull | Verify `eval $(minikube docker-env)` before every build; check `docker ps` for Minikube containers |
 | Gordon/kubectl-ai prompt fails | Blocked task | Refine prompt (add more constraints); never manually fix. Log refined prompt to audit log. |
 | Neon DB unreachable from pod | Backend crashes on startup | Test `DATABASE_URL` from backend pod: `kubectl exec -it <pod> -- python -c "import asyncpg"` |
 
@@ -211,7 +373,7 @@ configmap: { frontendConfigName: todo-frontend-config }
 
 ## Follow-up ADR Candidates
 
-📋 **Architectural decision detected**: Minikube local registry vs. remote registry (DockerHub/GHCR) for image storage.
+📋 **Architectural decision detected**: Minikube local registry vs. remote registry (DockerHub/GHCR).
 Document reasoning and tradeoffs? Run `/sp.adr minikube-image-registry-strategy`
 
 📋 **Architectural decision detected**: Single Helm chart vs. separate charts per service.

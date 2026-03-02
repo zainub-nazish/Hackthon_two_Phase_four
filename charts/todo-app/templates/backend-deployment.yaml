@@ -6,7 +6,7 @@ metadata:
   labels:
     app: todo-backend
 spec:
-  replicas: 2
+  replicas: {{ .Values.backend.replicas }}
   selector:
     matchLabels:
       app: todo-backend
@@ -17,29 +17,40 @@ spec:
     spec:
       containers:
         - name: todo-backend
-          image: todo-backend:latest
+          image: "{{ .Values.backend.image }}:{{ .Values.backend.tag }}"
           imagePullPolicy: Never
           ports:
-            - containerPort: 8000
+            - containerPort: {{ .Values.backend.port }}
           envFrom:
             - secretRef:
-                name: todo-backend-secret
+                name: {{ .Values.secrets.backendSecretName }}
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: {{ .Values.backend.resources.requests.cpu | quote }}
+              memory: {{ .Values.backend.resources.requests.memory | quote }}
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: {{ .Values.backend.resources.limits.cpu | quote }}
+              memory: {{ .Values.backend.resources.limits.memory | quote }}
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 15
-            periodSeconds: 30
+              path: {{ .Values.backend.livenessProbe.path }}
+              port: {{ .Values.backend.port }}
+            initialDelaySeconds: {{ .Values.backend.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.backend.livenessProbe.periodSeconds }}
           readinessProbe:
             httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 10
-            periodSeconds: 15
+              path: {{ .Values.backend.readinessProbe.path }}
+              port: {{ .Values.backend.port }}
+            initialDelaySeconds: {{ .Values.backend.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
+{{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: todo-data
+              mountPath: /app/data
+{{- end }}
+{{- if .Values.persistence.enabled }}
+      volumes:
+        - name: todo-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.claimName }}
+{{- end }}

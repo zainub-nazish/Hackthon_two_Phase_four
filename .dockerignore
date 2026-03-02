@@ -1,0 +1,51 @@
+# Docker ignore — prevents sensitive/unnecessary files entering build context
+
+# Git
+.git/
+.gitignore
+
+# Environment & secrets
+.env
+.env.*
+*.env
+*.secret
+kubeconfig*
+.kube/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Helm / K8s (no need in image build context)
+charts/
+*.yaml
+*.yml
+
+# Spec artifacts
+specs/
+history/
+.specify/
+
+# Docker files (not needed inside the image)
+Dockerfile*
+.dockerignore
+
+# Logs
+*.log
+phase-iv-audit.log
+
+# Misc
+.DS_Store
+*.tmp
+*.swp
+.vscode/
+.idea/
