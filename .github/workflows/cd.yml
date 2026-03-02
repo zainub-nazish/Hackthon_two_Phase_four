@@ -1,0 +1,179 @@
+# ============================================================
+# Task ID  : T059 / T060 / T061 / T062
+# Title    : GitHub Actions CD — multi-arch build, deploy, smoke-test, production gate
+# Spec Ref : speckit.plan → Section 8: CI/CD GitHub Actions
+# Plan Ref : speckit.plan → Section 7.4: CI/CD Jobs
+# ============================================================
+name: CD
+
+on:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # never cancel an in-progress deploy
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  # ─── Job 1 (T059): Multi-arch build + push to GHCR ────────────
+  build-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service:
+          - name: todo-backend
+            context: backend
+            dockerfile: backend/Dockerfile
+          - name: todo-frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
+          - name: recurring-service
+            context: recurring-service
+            dockerfile: recurring-service/Dockerfile
+          - name: notification-service
+            context: notification-service
+            dockerfile: notification-service/Dockerfile
+          - name: audit-service
+            context: audit-service
+            dockerfile: audit-service/Dockerfile
+          - name: websocket-service
+            context: websocket-service
+            dockerfile: websocket-service/Dockerfile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (for ARM64 cross-build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Job 2 (T060): Deploy to staging ──────────────────────────
+  deploy-staging:
+    name: Deploy — Staging
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: "3.14.0"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Helm upgrade — staging
+        run: |
+          helm upgrade --install todo-chatbot-v5 charts/todo-app-v5 \
+            --namespace todo-app --create-namespace \
+            -f charts/todo-app-v5/values.cloud.yaml \
+            -f charts/todo-app-v5/values.redpanda.yaml \
+            --set global.imageTag=${{ github.sha }} \
+            --set global.registry=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --wait --timeout 5m
+
+  # ─── Job 3 (T061): Smoke test ─────────────────────────────────
+  smoke-test:
+    name: Smoke Test — Staging
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/todo-backend -n todo-app --timeout=120s
+          kubectl rollout status deployment/todo-frontend -n todo-app --timeout=120s
+
+      - name: Health check
+        run: |
+          STAGING_URL="${{ vars.STAGING_URL }}"
+          echo "Checking ${STAGING_URL}/health"
+          curl --retry 5 --retry-delay 5 --fail "${STAGING_URL}/health"
+          echo "Health check passed"
+
+  # ─── Job 4 (T062): Production deploy (manual approval gate) ───
+  deploy-production:
+    name: Deploy — Production
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    # GitHub Environment 'production' must have required reviewers configured
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: "3.14.0"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure production kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Helm upgrade — production
+        run: |
+          helm upgrade --install todo-chatbot-v5 charts/todo-app-v5 \
+            --namespace todo-app --create-namespace \
+            -f charts/todo-app-v5/values.cloud.yaml \
+            -f charts/todo-app-v5/values.redpanda.yaml \
+            --set global.imageTag=${{ github.sha }} \
+            --set global.registry=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --wait --timeout 5m
+
+      - name: Verify production rollout
+        run: kubectl rollout status deployment/todo-backend -n todo-app --timeout=120s
