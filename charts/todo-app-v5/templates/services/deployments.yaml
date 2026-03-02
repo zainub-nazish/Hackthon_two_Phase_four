@@ -1,0 +1,146 @@
+# ============================================================
+# Task ID  : T050
+# Title    : Helm — Consumer Service Deployments (recurring, notification, audit, websocket)
+# Spec Ref : speckit.plan → Section 1.1: Architecture Overview
+# Plan Ref : speckit.plan → Section 7B: Minikube deployment sequence
+# ============================================================
+
+---
+# Recurring Task Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.recurringService.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.recurringService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.recurringService.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.recurringService.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.recurringService.name }}
+      annotations:
+        {{- include "todo.daprAnnotations" (dict "appId" .Values.recurringService.daprAppId "appPort" .Values.recurringService.daprAppPort "Values" .Values) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.recurringService.name }}
+          image: {{ include "todo.image" (dict "image" .Values.recurringService.image "Values" .Values) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.recurringService.port }}
+          livenessProbe:
+            {{- toYaml .Values.recurringService.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.recurringService.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.recurringService.resources | nindent 12 }}
+
+---
+# Notification Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.notificationService.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.notificationService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.notificationService.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.notificationService.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.notificationService.name }}
+      annotations:
+        {{- include "todo.daprAnnotations" (dict "appId" .Values.notificationService.daprAppId "appPort" .Values.notificationService.daprAppPort "Values" .Values) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.notificationService.name }}
+          image: {{ include "todo.image" (dict "image" .Values.notificationService.image "Values" .Values) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.notificationService.port }}
+          livenessProbe:
+            {{- toYaml .Values.notificationService.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.notificationService.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.notificationService.resources | nindent 12 }}
+
+---
+# Audit Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.auditService.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.auditService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.auditService.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.auditService.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.auditService.name }}
+      annotations:
+        {{- include "todo.daprAnnotations" (dict "appId" .Values.auditService.daprAppId "appPort" .Values.auditService.daprAppPort "Values" .Values) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.auditService.name }}
+          image: {{ include "todo.image" (dict "image" .Values.auditService.image "Values" .Values) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.auditService.port }}
+          livenessProbe:
+            {{- toYaml .Values.auditService.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.auditService.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.auditService.resources | nindent 12 }}
+
+---
+# WebSocket Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.websocketService.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.websocketService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.websocketService.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.websocketService.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.websocketService.name }}
+      annotations:
+        {{- include "todo.daprAnnotations" (dict "appId" .Values.websocketService.daprAppId "appPort" .Values.websocketService.daprAppPort "Values" .Values) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.websocketService.name }}
+          image: {{ include "todo.image" (dict "image" .Values.websocketService.image "Values" .Values) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.websocketService.port }}
+          livenessProbe:
+            {{- toYaml .Values.websocketService.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.websocketService.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.websocketService.resources | nindent 12 }}

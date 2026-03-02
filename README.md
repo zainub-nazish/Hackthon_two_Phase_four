@@ -220,3 +220,87 @@ This deployment was built following the [Spec-Driven Development (SDD)](https://
 | Task Breakdown (58 tasks) | `specs/014-cloud-native-deployment/tasks.md` |
 | Research & Decisions | `specs/014-cloud-native-deployment/research.md` |
 | Agent Audit Trail | `phase-iv-audit.log` |
+
+---
+
+## Phase V: Event-Driven Todo Chatbot (Advanced Cloud Deployment)
+
+Phase V adds recurring tasks, due-date reminders, Dapr Pub/Sub event-driven architecture,
+and cloud deployment to Oracle OKE (Always Free).
+
+### Phase V Quick Start — Minikube (Local)
+
+**Prerequisites**: Minikube, Helm 3.x, Dapr CLI, kubectl, Docker
+
+```bash
+# 1. Start Minikube
+minikube start --cpus=4 --memory=8192
+
+# 2. Enable Ingress addon
+minikube addons enable ingress
+
+# 3. Install Dapr on Minikube
+dapr init --kubernetes --wait
+
+# 4. Install Strimzi Kafka operator
+kubectl create namespace kafka
+kubectl apply -f https://strimzi.io/install/latest?namespace=kafka -n kafka
+
+# 5. Create namespace
+kubectl create namespace todo-app
+kubectl label namespace todo-app dapr.io/enabled=true
+
+# 6. Create secrets (substitute real values)
+kubectl create secret generic todo-backend-secret -n todo-app \
+  --from-literal=DATABASE_URL='postgresql+asyncpg://user:pass@host/db'
+
+kubectl create secret generic kafka-secret -n todo-app \
+  --from-literal=saslUsername='unused-for-local' \
+  --from-literal=saslPassword='unused-for-local'
+
+# 7. Build local images (Minikube Docker daemon)
+eval $(minikube docker-env)
+docker build -t todo-backend:latest ./backend
+docker build -t todo-frontend:latest ./frontend
+docker build -t recurring-service:latest ./recurring-service
+docker build -t notification-service:latest ./notification-service
+docker build -t audit-service:latest ./audit-service
+docker build -t websocket-service:latest ./websocket-service
+
+# 8. Deploy with Helm
+helm upgrade --install todo-chatbot-v5 ./charts/todo-app-v5 \
+  --namespace todo-app --wait
+
+# 9. Verify all 6 pods are 2/2 Running
+kubectl get pods -n todo-app
+
+# 10. Verify Dapr components are Ready
+kubectl get components -n todo-app
+
+# 11. Access frontend
+minikube service todo-frontend-svc -n todo-app
+```
+
+### Phase V Cloud Deployment (OKE Always-Free)
+
+See `infra/oke-setup.sh` for the full OKE + Redpanda Cloud deployment walkthrough.
+
+```bash
+# Deploy to OKE with cloud + Redpanda overrides
+export DATABASE_URL="postgresql+asyncpg://..."
+export KAFKA_USER="<redpanda-user>"
+export KAFKA_PASS="<redpanda-password>"
+bash infra/oke-setup.sh
+```
+
+### Phase V SDD Artifacts
+
+| Artifact | Path |
+|----------|------|
+| Constitution | `.specify/memory/constitution.md` |
+| Architecture Plan | `speckit.plan` |
+| Task Breakdown (65 tasks) | `speckit.tasks` |
+| CI Workflow | `.github/workflows/ci.yml` |
+| CD Workflow | `.github/workflows/cd.yml` |
+| Helm Chart v5 | `charts/todo-app-v5/` |
+| OKE Setup Script | `infra/oke-setup.sh` |

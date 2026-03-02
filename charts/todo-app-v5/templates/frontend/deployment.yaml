@@ -1,0 +1,34 @@
+# ============================================================
+# Task ID  : T049
+# Title    : Helm — todo-frontend Deployment
+# Spec Ref : speckit.plan → Section 7B: Minikube deployment
+# Plan Ref : speckit.plan → Section 1.1: Architecture Overview
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.frontend.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.frontend.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.frontend.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.frontend.name }}
+      annotations:
+        {{- include "todo.daprAnnotations" (dict "appId" .Values.frontend.daprAppId "appPort" .Values.frontend.daprAppPort "Values" .Values) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.frontend.name }}
+          image: {{ include "todo.image" (dict "image" .Values.frontend.image "Values" .Values) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.frontend.port }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}

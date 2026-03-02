@@ -1,10 +1,16 @@
+# ============================================================
+# Task ID  : T012 / T013
+# Title    : Update schemas with Phase V task fields
+# Spec Ref : speckit.tasks → T012 (schemas), T013 (priority enum)
+# Plan Ref : speckit.plan → Section 3: API Contracts
+# ============================================================
 """Pydantic models for request/response schemas."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # =============================================================================
@@ -49,29 +55,67 @@ class ErrorResponse(BaseModel):
 
 
 # =============================================================================
-# Task Models
+# Task Models — Phase V extended
 # =============================================================================
 
+VALID_PRIORITIES = ("low", "medium", "high")
+VALID_RECURRENCE_INTERVALS = ("daily", "weekly", "monthly", "custom")
+
+
+class RecurrenceSchema(BaseModel):
+    """Recurrence configuration for a repeating task."""
+
+    interval: Literal["daily", "weekly", "monthly", "custom"] = Field(
+        ..., description="How often the task repeats"
+    )
+    every: int = Field(1, ge=1, description="Repeat every N intervals")
+
+
 class TaskBase(BaseModel):
-    """Base task attributes."""
+    """Base task attributes — shared by create / update / response."""
 
     title: str = Field(..., min_length=1, max_length=200, description="Task title")
     description: Optional[str] = Field(None, max_length=2000, description="Task details")
     completed: bool = Field(default=False, description="Completion status")
+    # Phase V fields
+    due_date: Optional[datetime] = Field(None, description="Task due date (ISO 8601 UTC)")
+    priority: str = Field(default="medium", description="Priority: low | medium | high")
+    tags: List[str] = Field(default_factory=list, description="Arbitrary string labels")
+    recurrence: Optional[RecurrenceSchema] = Field(
+        None, description="Recurrence config — null means one-off task"
+    )
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: str) -> str:
+        if v not in VALID_PRIORITIES:
+            raise ValueError(f"priority must be one of {VALID_PRIORITIES}")
+        return v
 
 
 class TaskCreate(TaskBase):
     """Request body for creating a task."""
-
     pass
 
 
 class TaskUpdate(BaseModel):
-    """Request body for updating a task (partial update)."""
+    """Request body for partial task update."""
 
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     completed: Optional[bool] = None
+    # Phase V fields
+    due_date: Optional[datetime] = None
+    priority: Optional[str] = None
+    tags: Optional[List[str]] = None
+    recurrence: Optional[RecurrenceSchema] = None
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_PRIORITIES:
+            raise ValueError(f"priority must be one of {VALID_PRIORITIES}")
+        return v
 
 
 class TaskResponse(TaskBase):
@@ -81,6 +125,18 @@ class TaskResponse(TaskBase):
     owner_id: str = Field(..., description="User ID of task owner")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+    completed_at: Optional[datetime] = Field(None, description="When /complete was called")
+
+    model_config = {"from_attributes": True}
+
+
+class TaskCompleteResponse(BaseModel):
+    """Response body for POST /tasks/{id}/complete."""
+
+    id: UUID
+    completed: bool
+    completed_at: datetime
+    message: str = "Task marked complete"
 
     model_config = {"from_attributes": True}
 
@@ -88,7 +144,7 @@ class TaskResponse(TaskBase):
 class TaskListResponse(BaseModel):
     """Response body for listing tasks."""
 
-    items: list[TaskResponse] = Field(default_factory=list, description="List of tasks")
+    items: List[TaskResponse] = Field(default_factory=list, description="List of tasks")
     total: int = Field(..., description="Total number of tasks")
     limit: Optional[int] = Field(None, description="Requested limit")
     offset: Optional[int] = Field(None, description="Requested offset")

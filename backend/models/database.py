@@ -1,14 +1,25 @@
+# ============================================================
+# Task ID  : T011
+# Title    : Extend Task model with Phase V fields
+# Spec Ref : speckit.tasks → T011 (Task model extension)
+# Plan Ref : speckit.plan → Section 2.4: Database & External Services
+# ============================================================
 """SQLModel database models for persistent task storage and chat."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
+from sqlalchemy import JSON
 from sqlmodel import SQLModel, Field
 
 
 class Task(SQLModel, table=True):
-    """Database model for task storage."""
+    """
+    Database model for task storage — Phase V extended.
+    New fields: due_date, priority, tags, recurrence, completed_at.
+    Added via Alembic migration 001_add_phase_v_task_fields.
+    """
 
     __tablename__ = "tasks"
 
@@ -36,6 +47,30 @@ class Task(SQLModel, table=True):
         default=False,
         nullable=False,
         description="Task completion status"
+    )
+    # Phase V fields — added via Alembic migration 001
+    due_date: Optional[datetime] = Field(
+        default=None,
+        description="When this task is due (ISO 8601 UTC)"
+    )
+    priority: str = Field(
+        default="medium",
+        max_length=10,
+        description="Task priority: low | medium | high"
+    )
+    tags: Optional[List[str]] = Field(
+        default=None,
+        sa_type=JSON,
+        description="Arbitrary string labels"
+    )
+    recurrence: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_type=JSON,
+        description="Recurrence config: {interval: daily|weekly|monthly|custom, every: int}"
+    )
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp when /complete was called"
     )
     created_at: datetime = Field(
         default_factory=datetime.utcnow,

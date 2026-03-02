@@ -1,9 +1,16 @@
-"""FastAPI application entry point."""
+# ============================================================
+# Task ID  : T022 (Dapr job handler added)
+# Title    : FastAPI application entry point — Phase V
+# Spec Ref : speckit.plan → Section 4.2: Dapr Jobs callback
+# Plan Ref : speckit.plan → Section 4: Scheduling & Reminder/Recurring Logic
+# ============================================================
+"""FastAPI application entry point — Phase V with Dapr job handler."""
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.config import settings
 
@@ -71,6 +78,55 @@ from backend.routes import auth, tasks, chat
 
 app.include_router(auth.router)
 app.include_router(tasks.router)
+app.include_router(tasks.internal_router)
 app.include_router(chat.router)
+
+
+# =============================================================================
+# T022: Dapr Jobs API callback handler
+# Dapr calls POST /job/{job_name} when a scheduled job fires.
+# job_name convention: reminder-{task_id}
+# =============================================================================
+
+
+@app.post("/job/{job_name}", tags=["Dapr"])
+async def dapr_job_handler(job_name: str, request: Request) -> JSONResponse:
+    """
+    Receives Dapr Jobs API callbacks when a scheduled job fires.
+
+    Convention: job_name = reminder-{task_id}
+    Action: publish ReminderFired event to `reminders` Kafka topic via Dapr Pub/Sub.
+    """
+    import structlog
+
+    log = structlog.get_logger()
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    log.info("dapr_job_fired", job_name=job_name, data=body)
+
+    # Extract task metadata embedded when job was created
+    data = body.get("data", body)
+    task_id = data.get("task_id", job_name.replace("reminder-", "", 1))
+    user_id = data.get("user_id", "")
+    title = data.get("title", "")
+
+    from datetime import datetime, timezone
+    from backend.events.schemas import ReminderFired
+    from backend.events.publisher import publish_event
+
+    fired_event = ReminderFired(
+        task_id=task_id,
+        user_id=user_id,
+        fired_at=datetime.now(timezone.utc).isoformat(),
+        job_id=job_name,
+        delivery_status="delivered",
+    )
+    await publish_event("reminders", fired_event.dict())
+
+    return JSONResponse(status_code=200, content={"status": "SUCCESS"})
 
 

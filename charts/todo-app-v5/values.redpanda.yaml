@@ -1,0 +1,26 @@
+# ============================================================
+# Task ID  : T055
+# Title    : Redpanda Cloud Serverless value overrides
+# Spec Ref : speckit.plan → Section 3: Event-Driven Backbone
+# Plan Ref : speckit.plan → Section 2.2: Kafka/Redpanda decision (cloud)
+# ============================================================
+# Overrides Dapr pubsub component to use Redpanda Cloud Serverless.
+# Credentials come from the 'kafka-secret' Kubernetes Secret — never hardcoded.
+#
+# Create the secret before deploying:
+#   kubectl create secret generic kafka-secret -n todo-app \
+#     --from-literal=saslUsername='<REDPANDA_USER>' \
+#     --from-literal=saslPassword='<REDPANDA_PASS>'
+
+kafka:
+  # Strimzi is disabled; use Redpanda Cloud bootstrap URL
+  enabled: false
+  # Redpanda Cloud Serverless bootstrap (set to your cluster URL):
+  #   Format: seed-xxx.any.us-east-1.mpx.prd.cloud.redpanda.com:9092
+  bootstrapServers: "seed-REPLACE_ME.any.us-east-1.mpx.prd.cloud.redpanda.com:9092"
+  # SASL auth settings for Redpanda Cloud (SCRAM-SHA-256 + TLS)
+  authType: "password"
+  saslEnabled: true
+  tlsEnabled: true
+  # saslMechanism is overridden in the Dapr component template
+  # Credentials are read from 'kafka-secret' K8s Secret via Dapr secretstore

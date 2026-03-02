@@ -1,0 +1,23 @@
+# ============================================================
+# Task ID  : T049
+# Title    : Helm — todo-frontend Service (NodePort for Minikube)
+# Spec Ref : speckit.plan → Section 7B: Minikube deployment
+# Plan Ref : speckit.plan → Section 6.2: Frontend → Backend Pattern
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.frontend.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.frontend.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type | default "NodePort" }}
+  selector:
+    app: {{ .Values.frontend.name }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.port }}
+      targetPort: {{ .Values.frontend.port }}
+      protocol: TCP

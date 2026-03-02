@@ -1,0 +1,34 @@
+# ============================================================
+# Task ID  : T026
+# Title    : Dapr State Store component — PostgreSQL (Neon)
+# Spec Ref : speckit.plan → Section 5: State & Secrets Management
+# Plan Ref : speckit.plan → Section 5.1: Dapr statestore configuration
+# ============================================================
+{{- if .Values.dapr.enabled }}
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: state-postgresql
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: state.postgresql
+  version: v1
+  metadata:
+    # Connection string read from Kubernetes secret via Dapr secretstore
+    - name: connectionString
+      secretKeyRef:
+        name: todo-backend-secret
+        key: DATABASE_URL
+    # Dapr-managed state table (created automatically on first use)
+    - name: tableName
+      value: "dapr_state"
+    # Periodic cleanup of expired state entries
+    - name: cleanupInterval
+      value: "10m"
+    - name: actorStateStore
+      value: "false"
+auth:
+  secretStore: secretstore-k8s
+{{- end }}

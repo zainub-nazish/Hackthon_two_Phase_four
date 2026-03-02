@@ -1,0 +1,96 @@
+# ============================================================
+# Task ID  : T028
+# Title    : Dapr declarative Pub/Sub subscriptions
+# Spec Ref : speckit.plan → Section 3: Event-Driven Backbone
+# Plan Ref : speckit.plan → Section 3.2: Producers and consumers per topic
+# ============================================================
+{{- if .Values.dapr.enabled }}
+---
+# Recurring Task Service subscribes to task-events (listens for TaskCompleted)
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: recurring-service-task-events
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  pubsubname: pubsub-kafka
+  topic: task-events
+  route: /task-events-handler
+  scopes:
+    - recurring-service
+---
+# Notification Service subscribes to reminders (listens for ReminderFired)
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: notification-service-reminders
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  pubsubname: pubsub-kafka
+  topic: reminders
+  route: /reminders-handler
+  scopes:
+    - notification-service
+---
+# Audit Service subscribes to all 3 topics
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: audit-service-task-events
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  pubsubname: pubsub-kafka
+  topic: task-events
+  route: /task-events-handler
+  scopes:
+    - audit-service
+---
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: audit-service-reminders
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  pubsubname: pubsub-kafka
+  topic: reminders
+  route: /reminders-handler
+  scopes:
+    - audit-service
+---
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: audit-service-task-updates
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  pubsubname: pubsub-kafka
+  topic: task-updates
+  route: /task-updates-handler
+  scopes:
+    - audit-service
+---
+# WebSocket Service subscribes to task-updates (broadcasts to connected clients)
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: websocket-service-task-updates
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  pubsubname: pubsub-kafka
+  topic: task-updates
+  route: /task-updates-handler
+  scopes:
+    - websocket-service
+{{- end }}

@@ -1,0 +1,673 @@
+# speckit.plan
+## Phase V — Advanced Cloud Deployment & Event-Driven Todo Chatbot
+
+**Version**: 1.0
+**Generated**: 2026-03-02
+**Generated for**: Phase V complete implementation
+**Dependencies**: speckit.constitution v1.0.0, speckit.specify Phase V
+
+---
+
+## Constitution Check — GATE
+
+All sections below MUST comply with constitution v1.0.0. Gates evaluated before design:
+
+| Gate | Rule | Status |
+|------|------|--------|
+| C-01 | All Kafka communication via Dapr Pub/Sub only (no direct kafka-python) | ✅ PASS |
+| C-02 | No polling for reminders or recurring tasks — Dapr Jobs API only | ✅ PASS |
+| C-03 | No hardcoded credentials in source or Helm values | ✅ PASS |
+| C-04 | All secrets via Dapr secretstores.kubernetes | ✅ PASS |
+| C-05 | Every pod has Dapr sidecar injected | ✅ PASS |
+| C-06 | Services communicate only via Dapr (Pub/Sub or Service Invocation) | ✅ PASS |
+| C-07 | No new databases added (only Neon PostgreSQL) | ✅ PASS |
+| C-08 | FastAPI + Python 3.11, SQLModel, Next.js 14 App Router mandated | ✅ PASS |
+| C-09 | Minikube (local) → Oracle OKE preferred (cloud) deployment path | ✅ PASS |
+| C-10 | GitHub Actions for CI/CD | ✅ PASS |
+
+---
+
+## 1. High-Level Architecture Overview
+
+### 1.1 Target Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Kubernetes Cluster (todo-app namespace)                                        │
+│                                                                                 │
+│  ┌──────────────────────┐     ┌──────────────────────────────────────────────┐  │
+│  │  Frontend Pod         │     │  Backend Pod (Chat API)                      │  │
+│  │  ┌────────────────┐  │     │  ┌──────────────────┐  ┌──────────────────┐ │  │
+│  │  │  Next.js 14    │  │     │  │  FastAPI + MCP   │  │  Dapr Sidecar    │ │  │
+│  │  │  App Router    │  │     │  │  SQLModel        │  │  (port 3500)     │ │  │
+│  │  │  Chat UI       │  │     │  │  Python 3.11     │  │                  │ │  │
+│  │  └────────────────┘  │     │  └──────────────────┘  └──────────────────┘ │  │
+│  │  ┌────────────────┐  │     │       Publishes: task-events                 │  │
+│  │  │  Dapr Sidecar  │  │     │       Publishes: reminders                   │  │
+│  │  └────────────────┘  │     │       Publishes: task-updates                │  │
+│  └──────────┬───────────┘     │       Schedules: Dapr Jobs (reminders)       │  │
+│             │ HTTP/WS          └──────────────────────┬───────────────────────┘  │
+│             │                                         │                          │
+│  ┌──────────▼─────────────────────────────────────────▼───────────────────────┐  │
+│  │                    Dapr Pub/Sub Layer → Kafka / Redpanda                   │  │
+│  │                                                                             │  │
+│  │    topic: task-events    topic: reminders    topic: task-updates           │  │
+│  └───────┬───────────────────────┬──────────────────────┬──────────────────────┘  │
+│          │                       │                      │                          │
+│  ┌───────▼────────┐  ┌───────────▼──────┐  ┌───────────▼──────┐                 │
+│  │  Recurring     │  │  Notification    │  │  WebSocket       │                 │
+│  │  Task Pod      │  │  Pod             │  │  Pod             │                 │
+│  │ ┌────────────┐ │  │ ┌─────────────┐  │  │ ┌─────────────┐  │                 │
+│  │ │ Consumer   │ │  │ │ Consumer    │  │  │ │ WS Broker   │  │                 │
+│  │ │ FastAPI    │ │  │ │ FastAPI     │  │  │ │ FastAPI     │  │                 │
+│  │ └────────────┘ │  │ └─────────────┘  │  │ └─────────────┘  │                 │
+│  │ ┌────────────┐ │  │ ┌─────────────┐  │  │ ┌─────────────┐  │                 │
+│  │ │Dapr Sidecar│ │  │ │Dapr Sidecar │  │  │ │Dapr Sidecar │  │                 │
+│  │ └────────────┘ │  │ └─────────────┘  │  │ └─────────────┘  │                 │
+│  └───────┬────────┘  └──────────────────┘  └──────────────────┘                 │
+│          │                                                                        │
+│          │ Dapr Service Invocation                                               │
+│          ▼                                                                        │
+│  ┌────────────────┐  ┌──────────────────────┐                                   │
+│  │  Backend Pod   │  │  Audit Pod           │                                   │
+│  │  (POST /tasks) │  │ ┌──────────────────┐ │                                   │
+│  │  creates next  │  │ │ Consumer: all     │ │                                   │
+│  │  occurrence    │  │ │ topics → immutable│ │                                   │
+│  └────────────────┘  │ │ log (PostgreSQL)  │ │                                   │
+│                       │ └──────────────────┘ │                                   │
+│                       │ ┌──────────────────┐ │                                   │
+│                       │ │  Dapr Sidecar    │ │                                   │
+│                       │ └──────────────────┘ │                                   │
+│                       └──────────────────────┘                                   │
+│                                                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │  Dapr Control Plane (dapr-system namespace)                               │  │
+│  │  Operator · Sentry · Placement · Scheduler (Jobs API)                    │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  External:  Neon PostgreSQL (SSL)  ·  Redpanda Cloud / Strimzi (Kafka API)    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 Microservice Responsibilities
+
+| Service | Pod Name | Responsibility | Dapr Sidecar |
+|---------|----------|----------------|-------------|
+| **Chat API** | `todo-backend` | Single entry point — REST + MCP; CRUD; event publisher; Job scheduler | ✅ |
+| **Frontend** | `todo-frontend` | Next.js 14 Chat UI; WebSocket client for real-time updates | ✅ |
+| **Recurring Task Service** | `recurring-service` | Subscribes `task-events`; spawns next task on TaskCompleted with recurrence | ✅ |
+| **Notification Service** | `notification-service` | Subscribes `reminders`; delivers exact-time reminder to user | ✅ |
+| **Audit Service** | `audit-service` | Subscribes all 3 topics; writes immutable append-only audit log | ✅ |
+| **WebSocket Service** | `websocket-service` | Subscribes `task-updates`; broadcasts to all connected WS clients | ✅ |
+
+### 1.3 Dapr Component Connections
+
+```
+Todo Backend ──[pubsub.kafka]──► task-events ──► Recurring Service
+                                              └──► Audit Service
+             ──[pubsub.kafka]──► reminders   ──► Notification Service
+                                              └──► Audit Service
+             ──[pubsub.kafka]──► task-updates ──► WebSocket Service
+             ──[dapr-jobs]───► Scheduler (fires at due_date → publishes to reminders)
+             ──[state.postgresql]─► Neon DB (conversation state, task cache)
+             ──[secretstores.kubernetes]─► K8s Secrets (DATABASE_URL, KAFKA, OPENAI)
+
+Recurring Svc ──[service-invocation]─► Todo Backend POST /internal/tasks
+```
+
+---
+
+## 2. Technology & Component Mapping
+
+### 2.1 Kubernetes Distribution
+
+| Environment | Distribution | Rationale |
+|------------|-------------|-----------|
+| **Local dev** | Minikube (latest) | Lightweight, single-node, supports Dapr + Helm; 4 CPU / 8GB RAM minimum |
+| **Cloud (preferred)** | Oracle OKE Always Free | 4 ARM cores + 24GB RAM, $0 cost, permanent — covers all 6 pods |
+| **Cloud (alternative)** | GKE Standard | Free control plane, $28/month for e2-small nodes; viable within $300 credit |
+| **Cloud (alternative)** | AKS | Free control plane, ~$82/month — use only if Azure credits available |
+
+### 2.2 Kafka / Redpanda Decision
+
+| Environment | Kafka Implementation | Connection |
+|------------|---------------------|-----------|
+| **Minikube** | Strimzi Operator (self-hosted) | Internal K8s DNS: `kafka-cluster-kafka-bootstrap.kafka:9092` |
+| **Cloud** | Redpanda Cloud Serverless (free tier) | External SASL/SSL endpoint via K8s secret |
+
+**Rationale**: Strimzi is the only Kafka implementation that runs reliably on Minikube without
+Zookeeper. Redpanda Cloud Serverless provides a free 10GB / 10MB/s tier that Dapr pubsub.kafka
+connects to via SASL/SSL — zero code changes between environments (only Dapr component metadata
+differs via `values.yaml` overrides).
+
+### 2.3 Dapr Component Manifest Summary
+
+| Component Name | Type | Key Metadata | Namespace Scope |
+|---------------|------|-------------|----------------|
+| `pubsub-kafka` | `pubsub.kafka` | `brokers`, `authType`, `saslUsername`, `saslPassword` (from secret) | `todo-app` |
+| `state-postgresql` | `state.postgresql` | `connectionString` (from secret via secretstores.kubernetes) | `todo-app` |
+| `secretstore-k8s` | `secretstores.kubernetes` | `vaultName: default` | `todo-app` |
+| `dapr-jobs` | `jobs` (built-in) | Enabled via Dapr Scheduler service in control plane | `todo-app` |
+
+All Dapr component manifests live under `charts/todo-app-v5/templates/dapr/`.
+
+### 2.4 Database & External Services Mapping
+
+| Service | External Dependency | Access Method | Secret Key |
+|---------|--------------------|--------------|-----------:|
+| Chat API | Neon PostgreSQL | SQLModel + asyncpg via `DATABASE_URL` | `todo-backend-secret` |
+| Audit Service | Neon PostgreSQL | SQLModel (separate audit table) | `todo-backend-secret` |
+| Recurring Service | Chat API (internal) | Dapr Service Invocation | none |
+| Notification Service | (delivery stub for hackathon) | HTTP output or log-only | none |
+| All services | Redpanda / Strimzi | Dapr pubsub.kafka via `pubsub-kafka` component | `kafka-secret` |
+
+---
+
+## 3. Event-Driven Backbone
+
+### 3.1 Kafka Topic Configuration
+
+| Topic | Partitions | Replication Factor | Retention |
+|-------|-----------|-------------------|----------|
+| `task-events` | 3 | 1 (Minikube) / 3 (cloud) | 7 days |
+| `reminders` | 3 | 1 (Minikube) / 3 (cloud) | 3 days |
+| `task-updates` | 3 | 1 (Minikube) / 3 (cloud) | 1 day |
+
+Topics created automatically by Strimzi via `KafkaTopic` CRD (Minikube) or via Redpanda Cloud
+console (cloud). Dapr pubsub.kafka will auto-create topics if `allowedTopics` is not restricted.
+
+### 3.2 Producers and Consumers Per Topic
+
+**topic: task-events**
+| Direction | Service | Events |
+|-----------|---------|--------|
+| Producer | Chat API | `TaskCreated`, `TaskUpdated`, `TaskDeleted`, `TaskCompleted` |
+| Consumer | Recurring Task Service | `TaskCompleted` (with recurrence field) |
+| Consumer | Audit Service | All 4 event types |
+
+**topic: reminders**
+| Direction | Service | Events |
+|-----------|---------|--------|
+| Producer | Dapr Jobs API (via Scheduler → Chat API handler) | `ReminderScheduled`, `ReminderFired` |
+| Consumer | Notification Service | `ReminderFired` |
+| Consumer | Audit Service | `ReminderScheduled`, `ReminderFired` |
+
+**topic: task-updates**
+| Direction | Service | Events |
+|-----------|---------|--------|
+| Producer | Chat API | `TaskSyncUpdate` (created/updated/deleted/completed) |
+| Consumer | WebSocket Service | `TaskSyncUpdate` → broadcast to all WS clients |
+
+### 3.3 Event Schema References
+
+All event schemas are defined in `speckit.event-schemas.json` at repo root (generated by
+`/speckit-event-schema-validation`). Key schemas:
+
+| Event | Schema Version | Idempotency Key | Backward Compatible |
+|-------|---------------|----------------|---------------------|
+| `TaskCreated` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+| `TaskUpdated` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+| `TaskDeleted` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+| `TaskCompleted` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+| `ReminderScheduled` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+| `ReminderFired` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+| `TaskSyncUpdate` | 1.0.0 | `event_id` (UUID) | ✅ BACKWARD |
+
+All events carry: `event_id`, `event_type`, `schema_version`, `timestamp` (ISO 8601), `task_id`, `user_id`.
+
+### 3.4 Publish / Consume Pattern (Dapr Pub/Sub Only)
+
+**Publishing** (Chat API → Dapr sidecar):
+```
+POST http://localhost:3500/v1.0/publish/pubsub-kafka/task-events
+Body: { event_id, event_type, schema_version, timestamp, task_id, user_id, ... }
+```
+
+**Subscribing** (Consumer service → Dapr subscription):
+```
+Dapr subscription route: POST /task-events-handler
+Dapr declarative subscription YAML in charts/todo-app-v5/templates/dapr/subscriptions.yaml
+```
+
+**Idempotency enforcement**: Every consumer MUST check a dedup table in PostgreSQL keyed on
+`event_id` before processing. On duplicate, return HTTP 200 immediately without side effects.
+
+---
+
+## 4. Scheduling & Reminder / Recurring Logic
+
+### 4.1 Why Dapr Jobs API Over Cron
+
+| Approach | Problem | Dapr Jobs API Advantage |
+|----------|---------|------------------------|
+| Cron binding | Fires on interval, not at exact time — requires poll + check | Fires at exact UTC timestamp with sub-second precision |
+| Polling loop | Blocks async event loop; wastes resources | No polling — scheduler calls back exactly once |
+| APScheduler | Python-only; doesn't survive pod restarts without state | Jobs API persists in Dapr Scheduler service — survives restarts |
+| Kubernetes CronJob | Minute-level granularity only | Jobs API supports ISO 8601 with second-level precision |
+
+### 4.2 Reminder Scheduling Flow
+
+```
+POST /tasks  →  Chat API
+    │
+    ├─ [due_date present?] YES
+    │       │
+    │       ▼
+    │   POST http://localhost:3500/v1.0/jobs/reminder-{task_id}
+    │   Body: { dueTime: "<ISO8601>", data: { task_id, user_id, title } }
+    │
+    │   Dapr Scheduler stores job in etcd-backed store
+    │
+    │   [At exact due_date moment]
+    │       │
+    │       ▼
+    │   Dapr Scheduler → POST /job/reminder-{task_id}  →  Chat API job handler
+    │                                                        │
+    │                                                        ▼
+    │                                               Publishes ReminderFired
+    │                                               to `reminders` topic
+    │
+    └─ Always: publish TaskCreated to task-events
+```
+
+**Job naming convention**: `reminder-{task_id}` — ensures one job per task, supports cancellation
+on task deletion via `DELETE http://localhost:3500/v1.0/jobs/reminder-{task_id}`.
+
+### 4.3 Recurring Task Spawn Flow
+
+```
+PATCH /tasks/{id}/complete  →  Chat API
+    │
+    ├─ Publishes TaskCompleted to task-events
+    │       │
+    │       ▼
+    │   Recurring Task Service (subscribes to task-events)
+    │       │
+    │       ├─ [recurrence present?] YES
+    │       │       │
+    │       │       ▼
+    │       │   Calculate next_due from recurrence.interval + recurrence.every
+    │       │   (daily → +1 day, weekly → +7 days, monthly → +1 month, custom → +N days)
+    │       │       │
+    │       │       ▼
+    │       │   Dapr Service Invocation:
+    │       │   POST http://localhost:3500/v1.0/invoke/todo-backend/method/internal/tasks
+    │       │   Body: { title, due_date: next_due, recurrence, user_id, priority, tags }
+    │       │       │
+    │       │       ▼
+    │       │   Chat API creates new task → publishes TaskCreated
+    │       │
+    │       └─ [recurrence absent?] SKIP — no action
+    │
+    └─ Audit Service independently logs TaskCompleted
+```
+
+---
+
+## 5. State & Secrets Management
+
+### 5.1 Dapr State Store Configuration (PostgreSQL + Neon)
+
+**Component**: `state.postgresql`
+**Purpose**: Store conversation context per user session; short-lived task cache for MCP responses.
+
+State key pattern:
+```
+conversation:{user_id}:{session_id}   → JSON: last N messages, active task context
+task-cache:{task_id}                  → JSON: task snapshot (TTL: 5 minutes)
+```
+
+**Dapr state operations** (all via sidecar HTTP, never direct DB):
+```
+GET    http://localhost:3500/v1.0/state/state-postgresql/{key}
+POST   http://localhost:3500/v1.0/state/state-postgresql  Body: [{key, value, options}]
+DELETE http://localhost:3500/v1.0/state/state-postgresql/{key}
+```
+
+Connection string supplied via Dapr secretstore — never in component YAML directly.
+
+### 5.2 Secrets Strategy — Kubernetes SecretStore
+
+**Dapr Component**: `secretstores.kubernetes`
+All secrets are created imperatively (never in Helm values or source code) before `helm install`:
+
+```
+kubectl create secret generic todo-backend-secret \
+  --from-literal=DATABASE_URL=postgresql+asyncpg://... \
+  --from-literal=OPENAI_API_KEY=sk-... \
+  --from-literal=BETTER_AUTH_SECRET=... \
+  -n todo-app
+
+kubectl create secret generic kafka-secret \
+  --from-literal=KAFKA_BOOTSTRAP_SERVERS=<redpanda-or-strimzi-endpoint> \
+  --from-literal=KAFKA_API_KEY=<redpanda-sasl-user> \
+  --from-literal=KAFKA_API_SECRET=<redpanda-sasl-password> \
+  -n todo-app
+```
+
+Services read secrets via Dapr at startup:
+```
+GET http://localhost:3500/v1.0/secrets/secretstore-k8s/todo-backend-secret
+```
+
+**Secret rotation**: No pod restart needed — Dapr refreshes secret cache on next read cycle.
+
+### 5.3 Security Invariants
+
+- No secret field in any `values.yaml`, `configmap.yaml`, or source file.
+- All Dapr component manifests reference secrets via `secretKeyRef` — not literal values.
+- NetworkPolicy restricts cross-namespace traffic: only `todo-app` → `dapr-system` allowed.
+
+---
+
+## 6. Service-to-Service & Frontend-Backend Communication
+
+### 6.1 Dapr Service Invocation Usage
+
+The only internal synchronous call in Phase V is Recurring Task Service → Chat API:
+
+```
+Dapr Service Invocation:
+  Source: recurring-service (Dapr app-id: recurring-service)
+  Target: todo-backend   (Dapr app-id: todo-backend)
+  Method: POST /internal/tasks
+  Via:    http://localhost:3500/v1.0/invoke/todo-backend/method/internal/tasks
+
+Dapr handles: mTLS, retries, load balancing, service discovery
+```
+
+The `/internal/tasks` endpoint is **not exposed externally** — protected by NetworkPolicy and
+Dapr's service invocation mTLS enforcement.
+
+### 6.2 Frontend → Backend Pattern
+
+```
+Browser (Next.js App Router)
+    │
+    ├─ API Routes (server-side) → fetch("http://todo-backend-svc:8000/...")
+    │   Used for: auth, task CRUD, chat completions
+    │
+    └─ WebSocket Client → ws://websocket-service-svc:8001/ws/tasks
+        Used for: real-time task updates pushed from WebSocket Service
+```
+
+Frontend communicates with backend exclusively through:
+- Server-side API routes (avoids CORS; keeps API key server-side)
+- WebSocket connection to WebSocket Service for live updates
+
+### 6.3 Port Allocation
+
+| Service | Internal Port | Dapr HTTP | Dapr gRPC |
+|---------|-------------|----------|----------|
+| todo-backend | 8000 | 3500 | 50001 |
+| todo-frontend | 3000 | 3500 | 50001 |
+| recurring-service | 8001 | 3500 | 50001 |
+| notification-service | 8002 | 3500 | 50001 |
+| audit-service | 8003 | 3500 | 50001 |
+| websocket-service | 8004 | 3500 | 50001 |
+
+Each pod has its own Dapr sidecar on port 3500 (localhost) — no cross-pod port conflicts.
+
+---
+
+## 7. Deployment Sequencing
+
+### Part A: Prerequisites (Both Environments)
+
+Before any deployment, the following MUST be complete:
+1. Neon PostgreSQL database provisioned and connection string available.
+2. Alembic migrations run against Neon (`alembic upgrade head`).
+3. All Docker images built and tagged: `todo-backend`, `todo-frontend`, `recurring-service`, `notification-service`, `audit-service`, `websocket-service`.
+
+---
+
+### Part B: Minikube Local Deployment Sequence
+
+```
+Step 1: Start Minikube with sufficient resources
+  minikube start --cpus=4 --memory=8192 --disk-size=40g
+
+Step 2: Enable Minikube addons
+  minikube addons enable ingress
+  minikube addons enable metrics-server
+
+Step 3: Install Dapr CLI + Control Plane
+  dapr init -k --wait
+  # Verify: dapr status -k → all components Running
+
+Step 4: Deploy Strimzi Kafka Operator
+  kubectl create namespace kafka
+  kubectl apply -f https://strimzi.io/install/latest?namespace=kafka -n kafka
+  # Wait for operator: kubectl rollout status deployment/strimzi-cluster-operator -n kafka
+
+Step 5: Deploy Strimzi Kafka Cluster
+  kubectl apply -f charts/todo-app-v5/templates/kafka/strimzi-cluster.yaml -n kafka
+  # Wait: kubectl wait kafka/kafka-cluster --for=condition=Ready --timeout=300s -n kafka
+
+Step 6: Create K8s Secrets (imperative — not in Helm)
+  kubectl create namespace todo-app
+  kubectl create secret generic todo-backend-secret \
+    --from-literal=DATABASE_URL=<neon-url> \
+    --from-literal=OPENAI_API_KEY=<key> \
+    --from-literal=BETTER_AUTH_SECRET=<secret> -n todo-app
+  kubectl create secret generic kafka-secret \
+    --from-literal=KAFKA_BOOTSTRAP_SERVERS=kafka-cluster-kafka-bootstrap.kafka:9092 \
+    -n todo-app
+
+Step 7: Load Docker images into Minikube
+  minikube image load todo-backend:latest
+  minikube image load todo-frontend:latest
+  minikube image load recurring-service:latest
+  minikube image load notification-service:latest
+  minikube image load audit-service:latest
+  minikube image load websocket-service:latest
+
+Step 8: Helm install todo-app-v5
+  helm install todo-chatbot-v5 ./charts/todo-app-v5 \
+    -f charts/todo-app-v5/values.yaml \
+    -n todo-app
+
+Step 9: Verify all pods Running with Dapr sidecar (2/2)
+  kubectl get pods -n todo-app
+  # Expected: 6 pods, each showing 2/2 READY
+
+Step 10: Verify Dapr components
+  kubectl get components -n todo-app
+  # Expected: pubsub-kafka, state-postgresql, secretstore-k8s → all Ready
+
+Step 11: Port-forward for local access (or use minikube service)
+  minikube service todo-frontend-svc -n todo-app --url
+```
+
+---
+
+### Part C: Oracle OKE Cloud Deployment Sequence
+
+```
+Step 1: Create OKE cluster (Quick Create via OCI console)
+  - Choose: ARM shape A1.Flex, 4 OCPU, 24GB RAM
+  - Node pool: 2 worker nodes (Always Free)
+  - VCN: Quick Create (auto-provisions subnets, IGW, security lists)
+  - K8s version: 1.30.x (latest)
+
+Step 2: Configure kubectl context
+  oci ce cluster create-kubeconfig --cluster-id <ocid> \
+    --file $HOME/.kube/config --region <region> --token-version 2.0.0
+  kubectl get nodes   # Verify nodes Ready
+
+Step 3: Install Dapr on OKE
+  dapr init -k --wait
+  dapr status -k   # All components healthy
+
+Step 4: Create namespace and K8s secrets
+  kubectl create namespace todo-app
+  kubectl create secret generic todo-backend-secret \
+    --from-literal=DATABASE_URL=<neon-url> \
+    --from-literal=OPENAI_API_KEY=<key> \
+    --from-literal=BETTER_AUTH_SECRET=<secret> -n todo-app
+  kubectl create secret generic kafka-secret \
+    --from-literal=KAFKA_BOOTSTRAP_SERVERS=<redpanda-cloud-endpoint> \
+    --from-literal=KAFKA_API_KEY=<sasl-user> \
+    --from-literal=KAFKA_API_SECRET=<sasl-password> -n todo-app
+
+Step 5: Configure Redpanda Cloud (external managed Kafka)
+  - Log in to Redpanda Cloud (cloud.redpanda.com)
+  - Create Serverless cluster
+  - Create topics: task-events, reminders, task-updates (3 partitions each)
+  - Create SASL user; note bootstrap server + credentials
+
+Step 6: Helm install with cloud values overlay
+  helm install todo-chatbot-v5 ./charts/todo-app-v5 \
+    -f charts/todo-app-v5/values.yaml \
+    -f charts/todo-app-v5/values.cloud.yaml \
+    -f charts/todo-app-v5/values.redpanda.yaml \
+    -n todo-app
+
+  # values.cloud.yaml overrides: imagePullPolicy=Always, Ingress enabled, replicas
+  # values.redpanda.yaml overrides: Dapr pubsub-kafka brokers + SASL config
+
+Step 7: Verify cloud deployment
+  kubectl get pods -n todo-app          # All 6 pods 2/2 Ready
+  kubectl get components -n todo-app    # All Dapr components Ready
+  kubectl get ingress -n todo-app       # External IP assigned
+```
+
+**OKE ARM64 note**: All Docker images MUST be built for `linux/arm64` (or multi-arch).
+Use GitHub Actions matrix: `platforms: linux/amd64,linux/arm64` in buildx step.
+
+---
+
+### Part D: CI/CD GitHub Actions Pipeline
+
+```
+Trigger: push to main branch
+
+Job 1: lint-test (parallel matrix)
+  - backend: pytest backend/tests/ -v --cov=backend
+  - frontend: npm test (jest)
+  - helm: helm lint charts/todo-app-v5/
+
+Job 2: build-push (requires lint-test pass)
+  Matrix: [todo-backend, todo-frontend, recurring-service,
+           notification-service, audit-service, websocket-service]
+  Steps:
+    - docker/setup-buildx-action
+    - docker/build-push-action
+      platforms: linux/amd64,linux/arm64
+      tags: ghcr.io/${{ github.repository }}/<service>:${{ github.sha }}
+      push: true
+
+Job 3: deploy-staging (requires build-push)
+  Steps:
+    - Configure kubectl (OIDC or kubeconfig secret)
+    - helm upgrade --install todo-chatbot-v5 ./charts/todo-app-v5 \
+        -f values.cloud.yaml -f values.redpanda.yaml \
+        --set global.imageTag=${{ github.sha }} -n todo-app
+
+Job 4: smoke-test (requires deploy-staging)
+  Steps:
+    - kubectl rollout status deployment/todo-backend -n todo-app --timeout=120s
+    - curl health check against external Ingress URL
+
+Job 5: deploy-production (requires smoke-test + manual approval gate)
+  environment: production   # GitHub environment with required reviewers
+  Steps:
+    - helm upgrade todo-chatbot-v5 ... (production values)
+```
+
+---
+
+## 8. Monitoring, Logging & Observability
+
+### 8.1 Baseline (Phase V Required)
+
+| Tool | Command | Purpose |
+|------|---------|---------|
+| `kubectl logs` | `kubectl logs -l app=todo-backend -n todo-app --follow` | Service stdout/stderr |
+| Dapr logs | `kubectl logs -l app=todo-backend -c daprd -n todo-app` | Sidecar pub/sub events, state ops |
+| `kubectl describe pod` | `kubectl describe pod <pod-name> -n todo-app` | Probe failures, OOM events |
+| `dapr dashboard` | `dapr dashboard -k` | Visual component status and service graph |
+| Dapr metrics endpoint | `http://localhost:9090/metrics` (sidecar) | Prometheus-compatible scrape |
+
+### 8.2 Structured Logging Pattern
+
+All FastAPI services MUST use structured JSON logging:
+```python
+import structlog
+log = structlog.get_logger()
+log.info("task_created", task_id=str(task.id), user_id=str(user.id), event_id=str(event_id))
+```
+
+Log levels: `INFO` for business events, `ERROR` for failures, `DEBUG` for Dapr round-trips (disabled in production).
+
+### 8.3 Future Observability Additions (Post-Phase V)
+
+| Addition | Tool | Trigger |
+|----------|------|---------|
+| Metrics scraping | Prometheus + Grafana (Helm chart) | When >5 users |
+| Distributed tracing | Dapr Zipkin component | When debugging cross-service latency |
+| Alerting | Alertmanager → Slack webhook | When deploying to production |
+| Log aggregation | Grafana Loki | When log volume exceeds kubectl capacity |
+
+---
+
+## 9. Acceptance Criteria for Plan Completion
+
+The plan is considered complete when all of the following checkpoints are verifiable:
+
+| ID | Checkpoint | Verification |
+|----|-----------|-------------|
+| AC-P01 | All 6 service pods running with Dapr sidecar (2/2 Ready) on Minikube | `kubectl get pods -n todo-app` |
+| AC-P02 | All 3 Dapr components show Ready status | `kubectl get components -n todo-app` |
+| AC-P03 | Strimzi Kafka cluster Ready on Minikube | `kubectl get kafka -n kafka` |
+| AC-P04 | POST /tasks publishes to task-events topic (verified via Dapr logs) | Dapr sidecar logs show `[dapr.pubsub]` publish |
+| AC-P05 | TaskCompleted event triggers next task creation (recurring) | Recurring-service logs show next task created |
+| AC-P06 | ReminderFired event at exact due_date (±5s) | Notification-service logs show delivery at expected time |
+| AC-P07 | All audit events appear in audit log within 5s | GET /audit returns entry for every published event |
+| AC-P08 | WebSocket client receives update within 2s of PATCH | Browser DevTools WS frame shows update |
+| AC-P09 | All 6 service images successfully pushed to registry with correct SHA tag | `docker pull ghcr.io/.../todo-backend:<sha>` |
+| AC-P10 | GitHub Actions: lint + test + build + deploy all green | GitHub Actions tab shows all jobs ✅ |
+| AC-P11 | Production deploy gate requires manual approval | GitHub Environment `production` shows pending reviewer |
+| AC-P12 | No secret appears in any Helm values or source file | `grep -r "DATABASE_URL" charts/ src/` returns no results |
+| AC-P13 | OKE cloud deployment: all pods Running, Ingress accessible | Browser loads frontend via OKE external IP |
+
+---
+
+## 10. Open Questions / Clarifications Needed
+
+The following decisions MUST be resolved before task breakdown (`/speckit-tasks-phase-v`):
+
+| # | Question | Options | Impact |
+|---|---------|---------|--------|
+| OQ-01 | **WebSocket scaling strategy** for multi-replica WebSocket Service | (a) Sticky sessions via Ingress; (b) Redis pub/sub adapter | If (b), Redis must be added to constitution (amendment required) |
+| OQ-02 | **Notification delivery mechanism** for reminders | (a) Console log only (hackathon); (b) Email via SendGrid; (c) Browser push | Notification Service implementation scope depends on this |
+| OQ-03 | **Image registry** for CI/CD | (a) GitHub Container Registry (ghcr.io); (b) Docker Hub; (c) OCI Container Registry | GitHub Actions authentication strategy differs |
+| OQ-04 | **OKE image pull** for ARM64 | (a) Multi-arch buildx in CI (recommended); (b) separate ARM-only builds | Affects Dockerfile strategy and CI matrix |
+| OQ-05 | **Frontend auth integration** | (a) Better Auth (already in codebase); (b) Extend existing auth | Must confirm Better Auth is already deployed before Phase V begins |
+| OQ-06 | **speckit.specify** | Does a speckit.specify file exist at repo root? | If not, run `/speckit-specify-phase-v` before tasks |
+
+---
+
+## ADR Candidates
+
+The following architectural decisions in this plan are significant enough to warrant ADRs:
+
+1. **Strimzi vs Redpanda** — local Kafka choice (different CRD complexity, resource usage)
+   → Run `/sp.adr strimzi-vs-redpanda-local-kafka`
+
+2. **Dapr Jobs API vs APScheduler** — reminder scheduling mechanism
+   → Run `/sp.adr dapr-jobs-api-vs-apscheduler-for-reminders`
+
+3. **Oracle OKE vs GKE vs AKS** — cloud platform selection
+   → Run `/sp.adr cloud-platform-oke-vs-gke-vs-aks`
+
+4. **WebSocket Scaling Strategy** — sticky sessions vs Redis adapter
+   → Run `/sp.adr websocket-scaling-strategy` (resolve OQ-01 first)
+
+5. **Multi-arch Docker builds** — ARM64 support for OKE
+   → Run `/sp.adr multi-arch-docker-build-strategy`
+
+---
+
+*Plan ends here. No task breakdown. No code.*
+*Next step: `/speckit-tasks-phase-v` — generate atomic task list from this plan.*

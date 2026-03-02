@@ -1,0 +1,82 @@
+# ============================================================
+# Task ID  : T052
+# Title    : Helm — Nginx Ingress (cloud only, disabled locally)
+# Spec Ref : speckit.plan → Section 7C: Cloud deployment
+# Plan Ref : speckit.plan → Section 7B: Ingress conditional
+# ============================================================
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: todo-ingress
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # WebSocket upgrade support (required for /ws routes)
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+spec:
+  ingressClassName: {{ .Values.ingress.className | default "nginx" }}
+  {{- if .Values.ingress.host }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Backend API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.backend.name }}-svc
+                port:
+                  number: {{ .Values.backend.port }}
+          # WebSocket service
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.websocketService.name }}-svc
+                port:
+                  number: {{ .Values.websocketService.port }}
+          # Frontend (catch-all last)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.frontend.name }}-svc
+                port:
+                  number: {{ .Values.frontend.port }}
+  {{- else }}
+  # No host set — cluster-wide Ingress
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.backend.name }}-svc
+                port:
+                  number: {{ .Values.backend.port }}
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.websocketService.name }}-svc
+                port:
+                  number: {{ .Values.websocketService.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.frontend.name }}-svc
+                port:
+                  number: {{ .Values.frontend.port }}
+  {{- end }}
+{{- end }}

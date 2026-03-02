@@ -1,0 +1,10 @@
+# Task ID  : T006
+# Spec Ref : speckit.plan → Section 6: Namespace Strategy
+# Plan Ref : speckit.plan → Section 6 rules
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    phase: "v5"
