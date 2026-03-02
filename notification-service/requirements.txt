@@ -1,0 +1,8 @@
+# Task ID  : T003
+# Spec Ref : speckit.tasks → T003 (notification-service scaffold)
+# Plan Ref : speckit.plan → Section 1.2: Notification Service
+fastapi>=0.109.0
+uvicorn>=0.27.0
+httpx>=0.26.0
+structlog>=24.0.0
+pydantic>=2.0.0

@@ -1,0 +1,222 @@
+# Task ID  : T001 / T046
+# Spec Ref : speckit.plan → Section 2: Technology & Component Mapping
+# Plan Ref : speckit.plan → Section 5: Helm Chart Structure
+
+# ---------------------------------------------------------------------------
+# Global settings — override per environment in values.cloud.yaml
+# ---------------------------------------------------------------------------
+global:
+  imageTag: "latest"
+  imagePullPolicy: IfNotPresent
+  namespace: todo-app
+  registry: ""  # e.g. ghcr.io/your-org  — empty = local Minikube images
+
+# ---------------------------------------------------------------------------
+# Dapr settings
+# ---------------------------------------------------------------------------
+dapr:
+  enabled: true
+  logLevel: info
+
+# ---------------------------------------------------------------------------
+# Kafka / Strimzi (local Minikube)
+# cloud: set kafka.enabled=false and use values.redpanda.yaml instead
+# ---------------------------------------------------------------------------
+kafka:
+  enabled: true
+  bootstrapServers: "kafka-cluster-kafka-bootstrap.kafka:9092"
+  namespace: kafka
+  clusterName: kafka-cluster
+  topics:
+    - name: task-events
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000   # 7 days
+    - name: reminders
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 259200000   # 3 days
+    - name: task-updates
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 86400000    # 1 day
+
+# ---------------------------------------------------------------------------
+# Ingress (disabled locally — use minikube service instead)
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: nginx
+  host: ""  # set in values.cloud.yaml
+
+# ---------------------------------------------------------------------------
+# Backend (Chat API)
+# ---------------------------------------------------------------------------
+backend:
+  name: todo-backend
+  image: todo-backend
+  port: 8000
+  replicas: 1
+  daprAppId: todo-backend
+  daprAppPort: 8000
+  secretName: todo-backend-secret
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 15
+
+# ---------------------------------------------------------------------------
+# Frontend (Next.js)
+# ---------------------------------------------------------------------------
+frontend:
+  name: todo-frontend
+  image: todo-frontend
+  port: 3000
+  replicas: 1
+  daprAppId: todo-frontend
+  daprAppPort: 3000
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  service:
+    type: NodePort      # use LoadBalancer in values.cloud.yaml
+
+# ---------------------------------------------------------------------------
+# Recurring Task Service
+# ---------------------------------------------------------------------------
+recurringService:
+  name: recurring-service
+  image: recurring-service
+  port: 8001
+  replicas: 1
+  daprAppId: recurring-service
+  daprAppPort: 8001
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 10
+    periodSeconds: 15
+
+# ---------------------------------------------------------------------------
+# Notification Service
+# ---------------------------------------------------------------------------
+notificationService:
+  name: notification-service
+  image: notification-service
+  port: 8002
+  replicas: 1
+  daprAppId: notification-service
+  daprAppPort: 8002
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8002
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8002
+    initialDelaySeconds: 10
+    periodSeconds: 15
+
+# ---------------------------------------------------------------------------
+# Audit Service
+# ---------------------------------------------------------------------------
+auditService:
+  name: audit-service
+  image: audit-service
+  port: 8003
+  replicas: 1
+  daprAppId: audit-service
+  daprAppPort: 8003
+  secretName: todo-backend-secret   # shares Neon DB connection
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8003
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8003
+    initialDelaySeconds: 10
+    periodSeconds: 15
+
+# ---------------------------------------------------------------------------
+# WebSocket Service
+# ---------------------------------------------------------------------------
+websocketService:
+  name: websocket-service
+  image: websocket-service
+  port: 8004
+  replicas: 1
+  daprAppId: websocket-service
+  daprAppPort: 8004
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8004
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8004
+    initialDelaySeconds: 10
+    periodSeconds: 15

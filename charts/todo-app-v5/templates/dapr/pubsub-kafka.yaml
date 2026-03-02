@@ -1,0 +1,45 @@
+# ============================================================
+# Task ID  : T025
+# Title    : Dapr Pub/Sub component — Kafka (Redpanda-compatible)
+# Spec Ref : speckit.plan → Section 3: Event-Driven Backbone
+# Plan Ref : speckit.plan → Section 2.3: Dapr components summary
+# ============================================================
+{{- if .Values.dapr.enabled }}
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub-kafka
+  namespace: {{ .Values.global.namespace | default "todo-app" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    # Bootstrap brokers — injected from values (Strimzi local or Redpanda Cloud)
+    - name: brokers
+      value: {{ .Values.kafka.bootstrapServers | quote }}
+    # SASL/TLS auth (plain for Redpanda Cloud; disabled for local Strimzi)
+    - name: authType
+      value: {{ .Values.kafka.authType | default "none" | quote }}
+    {{- if and .Values.kafka.saslEnabled (eq .Values.kafka.authType "password") }}
+    - name: saslMechanism
+      value: "PLAIN"
+    - name: saslUsername
+      secretKeyRef:
+        name: kafka-secret
+        key: saslUsername
+    - name: saslPassword
+      secretKeyRef:
+        name: kafka-secret
+        key: saslPassword
+    {{- end }}
+    - name: initialOffset
+      value: "newest"
+    - name: consumeRetryEnabled
+      value: "true"
+    - name: consumeRetryInterval
+      value: "200ms"
+auth:
+  secretStore: secretstore-k8s
+{{- end }}

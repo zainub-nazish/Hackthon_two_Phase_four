@@ -1,0 +1,22 @@
+# Task ID  : T001
+# Spec Ref : speckit.plan → Section 5: Helm Chart Structure
+# Plan Ref : speckit.plan → Section 7B: Minikube Deployment
+apiVersion: v2
+name: todo-app-v5
+description: >
+  Phase V — Event-Driven Todo AI Chatbot.
+  6 microservices with Dapr sidecars, Kafka via Strimzi/Redpanda,
+  Neon PostgreSQL, and full CI/CD on Minikube → Oracle OKE.
+type: application
+version: 0.5.0
+appVersion: "5.0.0"
+keywords:
+  - todo
+  - chatbot
+  - dapr
+  - kafka
+  - fastapi
+  - nextjs
+maintainers:
+  - name: Hackathon II Team
+    url: https://github.com/zainub-nazish/Hackthon_two_Phase_four

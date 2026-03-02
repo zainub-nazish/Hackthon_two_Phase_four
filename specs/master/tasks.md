@@ -1,0 +1,317 @@
+# Tasks: Phase V — Advanced Cloud Deployment & Event-Driven Todo Chatbot
+
+**Plan**: `speckit.plan` (Phase V v1.0)
+**Constitution**: `speckit.constitution` v1.0.0
+**Generated**: 2026-03-02
+**Format**: `- [ ] [ID] [P?] [Story?] Description — exact/file/path`
+
+---
+
+## User Story Map
+
+| Story | Title | Priority | Independent Test |
+|-------|-------|---------|-----------------|
+| **US1** | Advanced Task Features | P1 — MVP | POST /tasks with due_date + recurrence returns correct fields; GET /tasks?priority=high returns filtered list |
+| **US2** | Dapr Pub/Sub Event Backbone | P2 | Creating a task triggers a message on `task-events` topic (verified via Dapr dashboard) |
+| **US3** | Consumer Microservices | P3 | Completing a recurring task auto-creates next occurrence; ReminderFired arrives at exact due_date |
+| **US4** | Local Kubernetes Deployment | P4 | All 6 pods Running 2/2 on Minikube; `kubectl get components -n todo-app` shows all Ready |
+| **US5** | Cloud Deployment (OKE) | P5 | All 6 pods Running on OKE; frontend accessible via Ingress external IP |
+| **US6** | CI/CD Pipeline | P6 | GitHub Actions: lint+test+build+push+deploy all green; production gate requires approval |
+
+---
+
+## Phase 1: Setup — New Service Scaffolding
+
+**Purpose**: Create the directory structure and base boilerplate for all new Phase V services
+and Helm chart v5. No logic yet — structure only.
+
+- [ ] T001 Create `charts/todo-app-v5/` Helm chart skeleton: `Chart.yaml`, `values.yaml`, `.helmignore`
+- [ ] T002 [P] Create `recurring-service/` Python package: `pyproject.toml`, `recurring-service/main.py` (empty FastAPI app), `Dockerfile`
+- [ ] T003 [P] Create `notification-service/` Python package: `pyproject.toml`, `notification-service/main.py` (empty FastAPI app), `Dockerfile`
+- [ ] T004 [P] Create `audit-service/` Python package: `pyproject.toml`, `audit-service/main.py` (empty FastAPI app), `Dockerfile`
+- [ ] T005 [P] Create `websocket-service/` Python package: `pyproject.toml`, `websocket-service/main.py` (empty FastAPI app), `Dockerfile`
+- [ ] T006 Create `charts/todo-app-v5/templates/` directory tree: `dapr/`, `backend/`, `frontend/`, `recurring-service/`, `notification-service/`, `audit-service/`, `websocket-service/`, `kafka/`, `ingress/`, `namespace.yaml`
+
+---
+
+## Phase 2: Foundational — Shared Infrastructure
+
+**Purpose**: Database migration tooling, shared event schemas, and idempotency table that ALL
+user stories depend on. MUST complete before any US1+ work.
+
+⚠️ **CRITICAL**: No user story implementation can begin until this phase is complete.
+
+- [ ] T007 Add Alembic to `backend/pyproject.toml` dependencies and initialise migration environment at `backend/alembic/` with `alembic.ini` pointing at `DATABASE_URL` env var
+- [ ] T008 Create Alembic migration `backend/alembic/versions/001_add_phase_v_task_fields.py` — adds columns: `due_date` (DateTime nullable), `priority` (VARCHAR default 'medium'), `tags` (JSON default []), `recurrence` (JSON nullable), `completed_at` (DateTime nullable) to `tasks` table
+- [ ] T009 Create Alembic migration `backend/alembic/versions/002_add_audit_and_dedup_tables.py` — creates `audit_log` table (id, event_id UUID unique, event_type, topic, payload JSON, created_at) and `event_dedup` table (event_id UUID primary key, processed_at)
+- [ ] T010 Create shared event schema module `backend/events/schemas.py` — Python dataclasses for `TaskCreated`, `TaskUpdated`, `TaskDeleted`, `TaskCompleted`, `ReminderScheduled`, `ReminderFired`, `TaskSyncUpdate` — all with `event_id: UUID`, `schema_version: str`, `timestamp: datetime`
+
+**Checkpoint**: Run `alembic upgrade head` — all 2 migrations apply cleanly. `backend/events/schemas.py` importable.
+
+---
+
+## Phase 3: User Story 1 — Advanced Task Features (P1) 🎯 MVP
+
+**Goal**: Extend the existing Task model and routes to support recurring tasks, due dates,
+priorities, tags, and full search/filter/sort. This story delivers the complete feature-rich
+task API independently from Kafka/Dapr.
+
+**Independent Test**: `pytest backend/tests/test_tasks.py -v` — POST /tasks with all new
+fields returns 201 with correct body; GET /tasks?priority=high&sort=due_date returns sorted
+filtered list; PATCH /tasks/{id}/complete sets completed_at.
+
+### Implementation for User Story 1
+
+- [ ] T011 [US1] Extend `backend/models/database.py` — add `due_date: Optional[datetime]`, `priority: str = "medium"`, `tags: List[str] = []`, `recurrence: Optional[dict]`, `completed_at: Optional[datetime]` fields to `Task` SQLModel
+- [ ] T012 [P] [US1] Update `backend/models/schemas.py` — add `RecurrenceSchema` (interval: Literal["daily","weekly","monthly","custom"], every: int), extend `TaskBase`/`TaskCreate`/`TaskUpdate`/`TaskResponse` with `due_date`, `priority`, `tags`, `recurrence`, `completed_at` fields; add `TaskCompleteResponse`
+- [ ] T013 [P] [US1] Add `priority` enum validation to `backend/models/schemas.py` — `Literal["low","medium","high"]` with validator rejecting unknown values
+- [ ] T014 [US1] Update `backend/routes/tasks.py` — add query params to `list_tasks`: `search: Optional[str]`, `priority: Optional[str]`, `tag: Optional[str]`, `due_before: Optional[datetime]`, `due_after: Optional[datetime]`, `sort: Optional[Literal["due_date","priority","created_at"]]`, `sort_dir: Optional[Literal["asc","desc"]]`
+- [ ] T015 [US1] Implement search/filter/sort logic in `backend/routes/tasks.py` — `search` uses `ilike` on title+description; `priority` filters exact match; `tag` uses JSON array containment; `due_before`/`due_after` filters on `due_date`; `sort` applies `order_by`
+- [ ] T016 [US1] Add `POST /api/v1/users/{user_id}/tasks/{task_id}/complete` endpoint in `backend/routes/tasks.py` — sets `completed=True`, `completed_at=utcnow()`, returns `TaskCompleteResponse`; validates task ownership
+- [ ] T017 [US1] Add `POST /internal/tasks` endpoint in `backend/routes/tasks.py` — creates task without auth check (internal only, mTLS via Dapr Service Invocation); accepts full `TaskCreate` payload including `user_id` in body
+- [ ] T018 [P] [US1] Update `backend/tests/test_tasks.py` — add test cases for: create task with all new fields, filter by priority, search by keyword, sort by due_date, complete endpoint sets completed_at, past due_date validation
+
+**Checkpoint**: `pytest backend/tests/test_tasks.py -v` — all tests pass. GET /tasks?priority=high returns only high-priority tasks.
+
+---
+
+## Phase 4: User Story 2 — Dapr Pub/Sub Event Backbone (P2)
+
+**Goal**: Wire the Chat API to publish events to Kafka via Dapr Pub/Sub after every task
+operation. Configure all Dapr component manifests. Enable Dapr state store for conversation
+memory. Integrate Dapr Jobs API for exact-time reminder scheduling.
+
+**Independent Test**: After task CRUD operation, `kubectl logs -l app=todo-backend -c daprd -n todo-app`
+shows `[dapr.pubsub]` publish log. Dapr dashboard shows all 3 components Ready.
+
+### Implementation for User Story 2
+
+- [ ] T019 [US2] Create `backend/events/publisher.py` — async function `publish_event(topic: str, event: dict)` that calls `POST http://localhost:3500/v1.0/publish/pubsub-kafka/{topic}` with JSON payload; handles HTTP errors with structured logging
+- [ ] T020 [US2] Integrate event publishing into `backend/routes/tasks.py` — after each CRUD operation call `publisher.publish_event("task-events", event.dict())` and `publisher.publish_event("task-updates", sync_event.dict())` using schemas from `backend/events/schemas.py`
+- [ ] T021 [US2] Create `backend/services/reminder_service.py` — `schedule_reminder(task_id, due_date, user_id, title)` calls `POST http://localhost:3500/v1.0/jobs/reminder-{task_id}` with `dueTime` ISO8601; `cancel_reminder(task_id)` calls `DELETE http://localhost:3500/v1.0/jobs/reminder-{task_id}`
+- [ ] T022 [US2] Add Dapr job handler `POST /job/reminder-{task_id}` in `backend/main.py` — receives Dapr job callback, publishes `ReminderFired` event to `reminders` topic using `publisher.publish_event`
+- [ ] T023 [US2] Wire reminder scheduling in `backend/routes/tasks.py` — on task create/update with `due_date`, call `reminder_service.schedule_reminder()`; on task delete, call `reminder_service.cancel_reminder()`
+- [ ] T024 [US2] Create `backend/services/state_service.py` — `save_conversation_state(user_id, session_id, messages)` and `get_conversation_state(user_id, session_id)` using Dapr state HTTP API at `http://localhost:3500/v1.0/state/state-postgresql`
+- [ ] T025 [P] [US2] Create Dapr component YAML `charts/todo-app-v5/templates/dapr/pubsub-kafka.yaml` — `pubsub.kafka` component reading `brokers`, `saslUsername`, `saslPassword` from `kafka-secret` via `secretKeyRef`; `authType: "password"`, `saslMechanism: "PLAIN"`, `initialOffset: "newest"`
+- [ ] T026 [P] [US2] Create Dapr component YAML `charts/todo-app-v5/templates/dapr/state-postgresql.yaml` — `state.postgresql` component reading `connectionString` from `todo-backend-secret` via `secretKeyRef`; `tableName: dapr_state`, `cleanupInterval: "10m"`
+- [ ] T027 [P] [US2] Create Dapr component YAML `charts/todo-app-v5/templates/dapr/secretstore-k8s.yaml` — `secretstores.kubernetes` component with name `secretstore-k8s`; no auth needed (uses K8s service account)
+- [ ] T028 [P] [US2] Create Dapr declarative subscription YAML `charts/todo-app-v5/templates/dapr/subscriptions.yaml` — 4 subscriptions: recurring-service→task-events, notification-service→reminders, audit-service→task-events+reminders+task-updates, websocket-service→task-updates
+
+**Checkpoint**: `kubectl get components -n todo-app` → pubsub-kafka, state-postgresql, secretstore-k8s all `Ready`. Dapr dashboard shows pub/sub graph.
+
+---
+
+## Phase 5: User Story 3 — Consumer Microservices (P3)
+
+**Goal**: Build all 4 consumer services as independent FastAPI applications with Dapr sidecar
+subscriptions. Each service handles its topic(s) and enforces idempotency.
+
+**Independent Test**:
+- Recurring: Complete a recurring task → logs show `[recurring-service] spawning next occurrence`
+- Notification: Publish ReminderFired → logs show `[notification-service] reminder delivered`
+- Audit: Any event → `GET /audit` returns entry within 5s
+- WebSocket: PATCH /tasks triggers WS frame on all connected clients within 2s
+
+### Recurring Task Service
+
+- [ ] T029 [US3] Create `recurring-service/handlers/task_completed.py` — `handle_task_completed(event: dict)`: checks dedup table, extracts recurrence, calculates `next_due`, calls Dapr Service Invocation `POST http://localhost:3500/v1.0/invoke/todo-backend/method/internal/tasks`
+- [ ] T030 [US3] Implement `next_due` calculation in `recurring-service/handlers/task_completed.py` — daily: `+timedelta(days=1)`, weekly: `+timedelta(weeks=1)`, monthly: `dateutil.relativedelta(months=1)`, custom: `+timedelta(days=recurrence["every"])`
+- [ ] T031 [US3] Wire subscription route in `recurring-service/main.py` — `POST /task-events-handler` receives Dapr CloudEvent, calls `handle_task_completed`, returns 200; include idempotency dedup check at top
+- [ ] T032 [P] [US3] Create `recurring-service/Dockerfile` — `FROM python:3.11-slim`, install `fastapi uvicorn httpx python-dateutil`, `CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]`
+
+### Notification Service
+
+- [ ] T033 [US3] Create `notification-service/handlers/reminder_fired.py` — `handle_reminder_fired(event: dict)`: checks dedup, logs structured `[notification-service] reminder delivered` with task_id, user_id, fired_at; stub for future delivery channels
+- [ ] T034 [US3] Wire subscription route in `notification-service/main.py` — `POST /reminders-handler` receives Dapr CloudEvent, calls `handle_reminder_fired`, returns 200; include idempotency check
+- [ ] T035 [P] [US3] Create `notification-service/Dockerfile` — same base as T032, port 8002
+
+### Audit Service
+
+- [ ] T036 [US3] Create `audit-service/models/audit_entry.py` — SQLModel `AuditEntry(table=True)` with fields: `id UUID pk`, `event_id UUID unique`, `event_type str`, `topic str`, `payload JSON`, `created_at datetime`; uses `DATABASE_URL` via Dapr secretstore
+- [ ] T037 [US3] Create `audit-service/handlers/` — `task_events.py`, `reminders.py`, `task_updates.py` — each reads `event_id`, checks dedup in `event_dedup` table, writes `AuditEntry` to `audit_log`, returns 200
+- [ ] T038 [US3] Wire subscription routes in `audit-service/main.py` — 3 POST handlers: `/task-events-handler`, `/reminders-handler`, `/task-updates-handler`; add `GET /audit` route returning paginated `AuditEntry` list (limit, offset query params)
+- [ ] T039 [P] [US3] Create `audit-service/Dockerfile` — same base as T032, add `sqlmodel asyncpg`, port 8003
+
+### WebSocket Service
+
+- [ ] T040 [US3] Create `websocket-service/handlers/task_sync.py` — `handle_task_sync(event: dict)`: validates `TaskSyncUpdate` schema, broadcasts JSON payload to all entries in `active_connections` dict (user_id → list[WebSocket])
+- [ ] T041 [US3] Implement WebSocket manager in `websocket-service/main.py` — `ConnectionManager` class: `connect(websocket, user_id)`, `disconnect(websocket, user_id)`, `broadcast(message)`; `WS /ws/tasks` endpoint accepts connections
+- [ ] T042 [US3] Wire subscription route in `websocket-service/main.py` — `POST /task-updates-handler` receives Dapr CloudEvent, calls `handle_task_sync`, returns 200 with idempotency check
+- [ ] T043 [P] [US3] Create `websocket-service/Dockerfile` — same base as T032, add `websockets`, port 8004
+- [ ] T044 [P] [US3] Update `frontend/src/` — add WebSocket client hook `frontend/src/hooks/useTaskSync.ts` that connects to `ws://websocket-service-svc:8004/ws/tasks` and updates task list on incoming messages
+
+**Checkpoint**: All 4 consumer services start without error. Publish test event to Kafka → each consumer logs correct handling.
+
+---
+
+## Phase 6: User Story 4 — Local Kubernetes Deployment (P4)
+
+**Goal**: Package all 6 services into a new Helm chart v5 with Dapr sidecar annotations,
+Strimzi Kafka, and full values.yaml. Verifiable on Minikube.
+
+**Independent Test**: `helm install todo-chatbot-v5 ./charts/todo-app-v5 -n todo-app` succeeds.
+`kubectl get pods -n todo-app` → 6 pods all `2/2 Running`. `kubectl get components -n todo-app` → all Ready.
+
+### Helm Chart v5 Structure
+
+- [ ] T045 [US4] Write `charts/todo-app-v5/Chart.yaml` — name: todo-app-v5, version: 0.5.0, appVersion: "5.0.0", dependencies: []
+- [ ] T046 [US4] Write `charts/todo-app-v5/values.yaml` — defines: `global.imageTag`, `global.imagePullPolicy`, `global.namespace: todo-app`; per-service blocks with `image`, `port`, `replicas`, `resources`; `kafka.enabled: true`, `kafka.bootstrapServers`; `dapr.enabled: true`, `dapr.appPort` per service
+- [ ] T047 [P] [US4] Create `charts/todo-app-v5/templates/backend/deployment.yaml` — Deployment for `todo-backend`; Dapr annotations: `dapr.io/enabled: "true"`, `dapr.io/app-id: "todo-backend"`, `dapr.io/app-port: "8000"`, `dapr.io/log-level: "info"`; no env var secrets (reads via Dapr secretstore)
+- [ ] T048 [P] [US4] Create `charts/todo-app-v5/templates/backend/service.yaml` — ClusterIP Service for `todo-backend`, port 8000
+- [ ] T049 [P] [US4] Create `charts/todo-app-v5/templates/frontend/deployment.yaml` + `service.yaml` — Next.js frontend; Dapr sidecar annotations; NodePort service for Minikube access (port 3000)
+- [ ] T050 [P] [US4] Create Deployment + Service YAMLs for `recurring-service`, `notification-service`, `audit-service`, `websocket-service` under `charts/todo-app-v5/templates/` — each with correct Dapr app-id and app-port annotations
+- [ ] T051 [US4] Create `charts/todo-app-v5/templates/kafka/strimzi-cluster.yaml` — Strimzi `Kafka` CR: name `kafka-cluster`, 1 replica, ephemeral storage, listeners: plain (port 9092) internal only; `KafkaTopic` CRs for `task-events`, `reminders`, `task-updates` (3 partitions, replication 1)
+- [ ] T052 [US4] Create `charts/todo-app-v5/templates/ingress/ingress.yaml` — Nginx Ingress: route `/` → `todo-frontend-svc:3000`, `/api` → `todo-backend-svc:8000`; `{{ if .Values.ingress.enabled }}` conditional
+- [ ] T053 [US4] Run `helm lint charts/todo-app-v5/` — resolve all linting errors; verify `helm template` renders all 6 deployments with Dapr annotations
+
+**Checkpoint**: `helm install todo-chatbot-v5 ./charts/todo-app-v5 -n todo-app --dry-run` succeeds without errors.
+
+---
+
+## Phase 7: User Story 5 — Cloud Deployment (OKE + Redpanda) (P5)
+
+**Goal**: Create cloud-specific Helm value overrides for OKE (ARM64) + Redpanda Cloud Serverless.
+Result is identical application stack deployed on $0 Always-Free Oracle cloud infrastructure.
+
+**Independent Test**: `kubectl get pods -n todo-app --context=oke-context` → all 6 pods 2/2 Ready.
+Frontend accessible via `kubectl get ingress -n todo-app` external IP.
+
+- [ ] T054 [US5] Create `charts/todo-app-v5/values.cloud.yaml` — overrides: `global.imagePullPolicy: Always`, `ingress.enabled: true`, `ingress.host: <oke-external-ip>`, `kafka.enabled: false` (Strimzi disabled for cloud), per-service `resources.requests` tuned for A1 ARM nodes
+- [ ] T055 [US5] Create `charts/todo-app-v5/values.redpanda.yaml` — overrides Dapr pubsub component bootstrap servers to Redpanda Cloud endpoint; adds SASL config: `authType: "password"`, `saslMechanism: "SCRAM-SHA-256"`, `tlsEnabled: true`; reads credentials from `kafka-secret`
+- [ ] T056 [P] [US5] Update all 6 Dockerfiles to support multi-arch build — add `--platform` arg comment; verify base images are multi-arch (`python:3.11-slim`, `node:20-alpine` are both amd64+arm64)
+- [ ] T057 [US5] Create `infra/oke-setup.sh` — documented shell script (non-executable reference) covering: OKE cluster creation via OCI console steps, kubectl context config, Dapr init, namespace creation, secret creation commands; no hardcoded credentials
+
+**Checkpoint**: `helm upgrade --install todo-chatbot-v5 ./charts/todo-app-v5 -f values.cloud.yaml -f values.redpanda.yaml -n todo-app` runs cleanly against OKE cluster.
+
+---
+
+## Phase 8: User Story 6 — CI/CD Pipeline (P6)
+
+**Goal**: GitHub Actions workflows for automated lint+test, multi-arch image build+push to
+GHCR, Helm deploy to staging, smoke test, and production manual approval gate.
+
+**Independent Test**: Push to main branch → all 5 GitHub Actions jobs complete green. Production
+deploy job shows "Waiting for approval" in Actions UI.
+
+- [ ] T058 [US6] Create `.github/workflows/ci.yml` — trigger: `pull_request` + `push to main`; jobs: `backend-test` (pytest backend/tests/), `frontend-lint` (npm run lint + npm test), `helm-lint` (helm lint charts/todo-app-v5/) — all 3 run in parallel
+- [ ] T059 [US6] Create `.github/workflows/cd.yml` — trigger: `push to main`; Job 1 `build-push`: matrix strategy over 6 services; `docker/setup-buildx-action`, `docker/build-push-action` with `platforms: linux/amd64,linux/arm64`; push to `ghcr.io/${{ github.repository }}/<service>:${{ github.sha }}`
+- [ ] T060 [US6] Add `deploy-staging` job to `.github/workflows/cd.yml` — requires `build-push`; uses `kubectl`/`helm` via kubeconfig stored in GitHub Secret `KUBE_CONFIG`; runs `helm upgrade --install` with `--set global.imageTag=${{ github.sha }}`
+- [ ] T061 [US6] Add `smoke-test` job to `.github/workflows/cd.yml` — requires `deploy-staging`; runs `kubectl rollout status deployment/todo-backend -n todo-app --timeout=120s`; curl health check to `${{ vars.STAGING_URL }}/health`
+- [ ] T062 [US6] Add `deploy-production` job to `.github/workflows/cd.yml` — requires `smoke-test`; `environment: production` (GitHub Environment with required reviewers); runs same `helm upgrade` with `values.cloud.yaml` against production kubeconfig secret
+
+**Checkpoint**: GitHub Actions tab shows: `ci.yml` ✅ on every PR; `cd.yml` all 5 jobs ✅ on main push; production job shows pending approval badge.
+
+---
+
+## Final Phase: Polish & Cross-Cutting Concerns
+
+**Purpose**: Observability, health probes, and documentation polish across all services.
+
+- [ ] T063 [P] Add `structlog` to all 6 service `pyproject.toml` files and configure JSON logging in each `main.py` — `structlog.configure(processors=[structlog.processors.JSONRenderer()])`
+- [ ] T064 [P] Add liveness and readiness probes to all 6 Helm deployment templates — `livenessProbe: httpGet: /health` at app port; `readinessProbe: httpGet: /health`; each FastAPI app MUST have `GET /health` returning `{"status": "ok"}`
+- [ ] T065 Update `README.md` — add Phase V Quick Start section: Minikube local setup (11 steps from speckit.plan §7B), secret creation commands, `helm install` command, `kubectl get pods` verification
+
+---
+
+## Dependencies & Execution Order
+
+```
+Phase 1: Setup (T001–T006) — no dependencies, all parallelizable
+    │
+Phase 2: Foundational (T007–T010) — depends on Phase 1
+    │
+Phase 3: US1 Advanced Features (T011–T018) — depends on T007-T010 (migrations)
+    │
+    ├── Phase 4: US2 Dapr Pub/Sub (T019–T028) — depends on US1 complete
+    │       │
+    │       └── Phase 5: US3 Consumer Services (T029–T044) — depends on US2 (Dapr components)
+    │               │
+    │               └── Phase 6: US4 Local K8s Deploy (T045–T053) — depends on US3 services exist
+    │                       │
+    │                       └── Phase 7: US5 Cloud Deploy (T054–T057) — depends on US4 (chart exists)
+    │                               │
+    │                               └── Phase 8: US6 CI/CD (T058–T062) — depends on US5 (images + chart)
+    │
+Final: Polish (T063–T065) — depends on all services implemented
+```
+
+### Story Independence Within Each Phase
+
+- **US1** (T011–T018): Fully independently testable — no Dapr/K8s needed. Run `pytest` locally.
+- **US2** (T019–T028): Requires Dapr running locally (`dapr run`) + local Kafka for testing.
+- **US3** (T029–T044): Each consumer independently testable via Dapr `dapr publish` CLI command.
+- **US4** (T045–T053): Fully independent of US5/US6 — Minikube-only test.
+- **US5** (T054–T057): Values override only — inherits US4 chart structure.
+- **US6** (T058–T062): Independent of local K8s — GitHub Actions runs in cloud.
+
+### Parallel Opportunities per Phase
+
+```bash
+# Phase 1 — run all setup tasks simultaneously:
+Task: T002 recurring-service scaffold
+Task: T003 notification-service scaffold
+Task: T004 audit-service scaffold
+Task: T005 websocket-service scaffold
+
+# Phase 3 — parallel within US1:
+Task: T012 update schemas.py
+Task: T013 add priority enum validation
+Task: T018 update test_tasks.py
+
+# Phase 4 — parallel within US2:
+Task: T025 pubsub-kafka.yaml
+Task: T026 state-postgresql.yaml
+Task: T027 secretstore-k8s.yaml
+Task: T028 subscriptions.yaml
+
+# Phase 5 — consumer services can be built in parallel:
+Task: T029-T032 recurring-service
+Task: T033-T035 notification-service
+Task: T036-T039 audit-service
+Task: T040-T044 websocket-service
+```
+
+---
+
+## Implementation Strategy
+
+### MVP First (User Story 1 Only)
+
+1. Complete Phase 1 (Setup) + Phase 2 (Foundational)
+2. Complete Phase 3 (US1 — Advanced Task Features)
+3. **STOP and validate**: `pytest backend/tests/test_tasks.py -v` — all pass
+4. Demo: Task CRUD with due_date, priority, tags, recurrence via API
+
+### Incremental Delivery
+
+| Increment | Stories | Deliverable |
+|-----------|---------|------------|
+| 1 | US1 | Feature-rich task API — recurring, due dates, priorities, tags, search |
+| 2 | US1 + US2 | Event-publishing backend — every CRUD emits Kafka events via Dapr |
+| 3 | US1–US3 | Full event-driven system — 4 consumers processing events |
+| 4 | US1–US4 | Local K8s demo — all 6 pods on Minikube |
+| 5 | US1–US5 | Cloud demo — live on Oracle OKE at $0 cost |
+| 6 | US1–US6 | Full CI/CD — every push auto-deploys to staging |
+
+---
+
+## Task Summary
+
+| Phase | Story | Tasks | Parallelizable |
+|-------|-------|-------|---------------|
+| Phase 1: Setup | — | T001–T006 (6) | 4 of 6 |
+| Phase 2: Foundational | — | T007–T010 (4) | 0 of 4 |
+| Phase 3: Advanced Features | US1 | T011–T018 (8) | 3 of 8 |
+| Phase 4: Dapr Pub/Sub | US2 | T019–T028 (10) | 4 of 10 |
+| Phase 5: Consumer Services | US3 | T029–T044 (16) | 8 of 16 |
+| Phase 6: Local K8s | US4 | T045–T053 (9) | 5 of 9 |
+| Phase 7: Cloud Deploy | US5 | T054–T057 (4) | 1 of 4 |
+| Phase 8: CI/CD | US6 | T058–T062 (5) | 0 of 5 |
+| Final: Polish | — | T063–T065 (3) | 2 of 3 |
+| **TOTAL** | | **65 tasks** | **27 parallelizable** |
+
+---
+
+*Generated from `speckit.plan` v1.0 · Constitution gates: 10/10 PASS*
+*No code in this file — task descriptions only.*
+*Next step: `/speckit-implement-phase-v T-ADV-001` or `/sp.implement`*

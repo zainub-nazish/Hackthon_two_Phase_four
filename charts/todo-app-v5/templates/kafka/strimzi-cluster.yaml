@@ -1,0 +1,90 @@
+# ============================================================
+# Task ID  : T051
+# Title    : Helm — Strimzi Kafka Cluster + Topic CRs (local Minikube)
+# Spec Ref : speckit.plan → Section 3: Event-Driven Backbone
+# Plan Ref : speckit.plan → Section 7B: Minikube — Strimzi Kafka
+# ============================================================
+{{- if .Values.kafka.enabled }}
+---
+# Strimzi Kafka Cluster — single-node ephemeral (Minikube)
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: {{ .Values.kafka.clusterName }}
+  namespace: {{ .Values.kafka.namespace | default "kafka" }}
+  labels:
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  kafka:
+    version: 3.6.0
+    replicas: 1
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      # Retain offsets longer than segment retention for consumer group recovery
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+    storage:
+      type: ephemeral   # non-persistent — Minikube dev only
+  zookeeper:
+    replicas: 1
+    storage:
+      type: ephemeral
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+
+---
+# KafkaTopic: task-events
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: task-events
+  namespace: {{ .Values.kafka.namespace | default "kafka" }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.clusterName }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  partitions: {{ (index .Values.kafka.topics 0).partitions | default 3 }}
+  replicas: {{ (index .Values.kafka.topics 0).replicationFactor | default 1 }}
+  config:
+    retention.ms: {{ (index .Values.kafka.topics 0).retentionMs | default 604800000 | toString | quote }}
+
+---
+# KafkaTopic: reminders
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: reminders
+  namespace: {{ .Values.kafka.namespace | default "kafka" }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.clusterName }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  partitions: {{ (index .Values.kafka.topics 1).partitions | default 3 }}
+  replicas: {{ (index .Values.kafka.topics 1).replicationFactor | default 1 }}
+  config:
+    retention.ms: {{ (index .Values.kafka.topics 1).retentionMs | default 259200000 | toString | quote }}
+
+---
+# KafkaTopic: task-updates
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: task-updates
+  namespace: {{ .Values.kafka.namespace | default "kafka" }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.clusterName }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  partitions: {{ (index .Values.kafka.topics 2).partitions | default 3 }}
+  replicas: {{ (index .Values.kafka.topics 2).replicationFactor | default 1 }}
+  config:
+    retention.ms: {{ (index .Values.kafka.topics 2).retentionMs | default 86400000 | toString | quote }}
+{{- end }}

@@ -1,0 +1,95 @@
+# ============================================================
+# Task ID  : T054
+# Title    : Cloud (OKE Always-Free) value overrides
+# Spec Ref : speckit.plan → Section 7C: Cloud setup sequence (Oracle OKE)
+# Plan Ref : speckit.plan → Section 2.1: Kubernetes distribution choices
+# ============================================================
+# Usage:
+#   helm upgrade --install todo-chatbot-v5 ./charts/todo-app-v5 \
+#     -f charts/todo-app-v5/values.cloud.yaml \
+#     -f charts/todo-app-v5/values.redpanda.yaml \
+#     -n todo-app
+#
+# Constitution C-04: no secrets in values — credentials in K8s Secrets
+
+global:
+  # Cloud always pulls from registry (never uses local cached images)
+  imagePullPolicy: Always
+  # Set to your OCI Container Registry or GHCR prefix
+  # e.g. ghcr.io/your-org
+  registry: "ghcr.io/your-org"
+  imageTag: "latest"   # override with --set global.imageTag=$GITHUB_SHA
+
+ingress:
+  enabled: true
+  className: nginx
+  # Populated at deploy time: kubectl get ingress -n todo-app
+  host: ""   # e.g. todo.example.com or OKE LB external IP
+
+# Strimzi disabled in cloud — using Redpanda Cloud Serverless instead
+kafka:
+  enabled: false
+
+# A1 (ARM64) Always-Free Ampere nodes — tuned resource requests
+# OKE always-free: 4 OCPU / 24 GB shared across all pods
+backend:
+  replicas: 1
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "768Mi"
+
+frontend:
+  replicas: 1
+  service:
+    type: ClusterIP   # Ingress handles external routing in cloud
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+recurringService:
+  replicas: 1
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "96Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+notificationService:
+  replicas: 1
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "96Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+auditService:
+  replicas: 1
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "96Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+websocketService:
+  replicas: 1
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "96Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"

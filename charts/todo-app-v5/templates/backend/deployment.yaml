@@ -1,0 +1,40 @@
+# ============================================================
+# Task ID  : T047
+# Title    : Helm — todo-backend Deployment
+# Spec Ref : speckit.plan → Section 7B: Minikube deployment
+# Plan Ref : speckit.plan → Section 1.1: Architecture Overview
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.backend.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.backend.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.backend.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.backend.name }}
+      annotations:
+        {{- include "todo.daprAnnotations" (dict "appId" .Values.backend.daprAppId "appPort" .Values.backend.daprAppPort "Values" .Values) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.backend.name }}
+          image: {{ include "todo.image" (dict "image" .Values.backend.image "Values" .Values) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.backend.port }}
+          # No env var secrets — reads via Dapr secretstore at runtime
+          # Constitution C-04: never hardcode secrets / env var leakage
+          livenessProbe:
+            {{- toYaml .Values.backend.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}

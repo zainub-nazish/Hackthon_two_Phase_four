@@ -1,0 +1,81 @@
+# ============================================================
+# Task ID  : T050
+# Title    : Helm — Consumer Service ClusterIP Services
+# Spec Ref : speckit.plan → Section 1.1: Architecture Overview
+# Plan Ref : speckit.plan → Section 6: Service-to-Service Communication
+# ============================================================
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.recurringService.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.recurringService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.recurringService.name }}
+  ports:
+    - name: http
+      port: {{ .Values.recurringService.port }}
+      targetPort: {{ .Values.recurringService.port }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.notificationService.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.notificationService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.notificationService.name }}
+  ports:
+    - name: http
+      port: {{ .Values.notificationService.port }}
+      targetPort: {{ .Values.notificationService.port }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.auditService.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.auditService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.auditService.name }}
+  ports:
+    - name: http
+      port: {{ .Values.auditService.port }}
+      targetPort: {{ .Values.auditService.port }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.websocketService.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.websocketService.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.websocketService.name }}
+  ports:
+    - name: http
+      port: {{ .Values.websocketService.port }}
+      targetPort: {{ .Values.websocketService.port }}
+    - name: ws
+      port: 8080
+      targetPort: {{ .Values.websocketService.port }}

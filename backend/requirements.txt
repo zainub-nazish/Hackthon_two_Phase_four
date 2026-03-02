@@ -12,6 +12,16 @@ pydantic-settings>=2.0.0
 sqlmodel>=0.0.16
 asyncpg>=0.29.0
 greenlet>=3.0.0
+alembic>=1.13.0
+
+# Event publishing (Dapr HTTP)
+httpx>=0.26.0
+
+# Structured logging
+structlog>=24.0.0
+
+# Recurring task date math
+python-dateutil>=2.9.0
 
 # AI Agent
 openai-agents>=0.0.7

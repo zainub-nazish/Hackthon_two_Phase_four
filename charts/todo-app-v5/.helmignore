@@ -1,0 +1,9 @@
+# Task ID  : T001
+# Patterns to ignore when packaging the Helm chart
+.DS_Store
+.git/
+.gitignore
+*.md
+*.txt
+tests/
+ci/

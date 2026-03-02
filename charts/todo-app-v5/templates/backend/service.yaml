@@ -1,0 +1,23 @@
+# ============================================================
+# Task ID  : T048
+# Title    : Helm — todo-backend ClusterIP Service
+# Spec Ref : speckit.plan → Section 7B: Minikube deployment
+# Plan Ref : speckit.plan → Section 6: Service-to-Service Communication
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.backend.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Values.backend.name }}
+    {{- include "todo.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.backend.name }}
+  ports:
+    - name: http
+      port: {{ .Values.backend.port }}
+      targetPort: {{ .Values.backend.port }}
+      protocol: TCP
